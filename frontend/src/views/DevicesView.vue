@@ -95,6 +95,15 @@ function maskSerial(serial: string): string {
   return `•••• ${serial.slice(-4)}`
 }
 
+function redactSerial(value: string | null, serial: string): string | null {
+  if (!value) return null
+  return value.split(serial).join(maskSerial(serial))
+}
+
+function displayDeviceName(device: DeviceSummary): string {
+  return redactSerial(device.name, device.device_serial) || '未命名设备'
+}
+
 function formatDate(value: string | Date | null): string {
   if (!value) return '--'
   const date = value instanceof Date ? value : new Date(value)
@@ -209,7 +218,7 @@ onBeforeUnmount(() => {
           <el-table-column label="设备名称" min-width="190">
             <template #default="scope">
               <div class="device-name-cell">
-                <strong>{{ scope.row.name || '未命名设备' }}</strong>
+                <strong>{{ displayDeviceName(scope.row) }}</strong>
                 <span>{{ maskSerial(scope.row.device_serial) }}</span>
               </div>
             </template>
@@ -259,7 +268,7 @@ onBeforeUnmount(() => {
       <el-descriptions v-else-if="selectedDevice" :column="1" border>
         <el-descriptions-item label="平台">EZVIZ</el-descriptions-item>
         <el-descriptions-item label="设备名称">
-          {{ selectedDevice.name || '--' }}
+          {{ redactSerial(selectedDevice.name, selectedDevice.device_serial) || '--' }}
         </el-descriptions-item>
         <el-descriptions-item label="设备序列号">
           {{ maskSerial(selectedDevice.device_serial) }}
@@ -276,7 +285,7 @@ onBeforeUnmount(() => {
           </el-tag>
         </el-descriptions-item>
         <el-descriptions-item v-if="selectedDevice.local_name" label="设备上报名称">
-          {{ selectedDevice.local_name }}
+          {{ redactSerial(selectedDevice.local_name, selectedDevice.device_serial) }}
         </el-descriptions-item>
         <el-descriptions-item v-if="selectedDevice.firmware_version" label="固件版本">
           {{ selectedDevice.firmware_version }}
