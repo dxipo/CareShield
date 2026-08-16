@@ -23,3 +23,13 @@ class EzvizApiError(EzvizError):
 
 class EzvizDeviceNotFoundError(EzvizError):
     pass
+
+
+class EzvizDeviceOfflineError(EzvizError):
+    pass
+
+
+class EzvizStreamUnavailableError(EzvizError):
+    def __init__(self, code: str | None = None) -> None:
+        self.code = code
+        super().__init__("EZVIZ live stream is unavailable")

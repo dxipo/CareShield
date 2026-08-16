@@ -2,7 +2,7 @@
 
 ## 项目用途
 
-本项目是“颐安盾——多模态居家老人智能风险防控平台”（Elderly AI Safety Platform），服务于老年人跌倒风险评估、实时跌倒检测和诈骗风险识别研究。M0 基础工程和 M1 Web 平台壳已完成；当前 M2 仅通过 Backend EZVIZ Adapter 查询真实设备信息，不实现视频、AI 或其他业务数据。
+本项目是“颐安盾——多模态居家老人智能风险防控平台”（Elderly AI Safety Platform），服务于老年人跌倒风险评估、实时跌倒检测和诈骗风险识别研究。M0 基础工程、M1 Web 平台壳和 M2 真实设备查询已完成；当前 M3 仅接入真实 EZVIZ HLS 实时流与 ffprobe 媒体诊断，不实现 AI 或其他业务数据。
 
 ## 固定技术栈
 
@@ -10,7 +10,7 @@
 - Backend：Python、FastAPI、Uvicorn。
 - AI Worker：后续使用 Python、PyTorch，必须独立于 Backend。
 - Infrastructure：PostgreSQL、Redis、Docker Compose；需要时再引入 Nginx。
-- Video：后续使用 FFmpeg、PyAV。
+- Video：M3 使用 EZVIZ 官方 HLS Player 与 ffprobe；后续 AI Worker 可使用 FFmpeg、PyAV。
 
 未经项目负责人确认，不得随意替换或增加同类技术栈。
 
@@ -38,3 +38,5 @@
 8. 不允许把 AI 推理代码写进 FastAPI route。
 9. 保持模块化单体 Backend + 独立 AI Worker，不做无必要的微服务拆分。
 10. 代码应简单、明确、可维护，不为“看起来完整”创建无实际用途的抽象。
+11. 播放地址按临时敏感资源处理，不得持久化、完整记录日志或写入测试 fixture。
+12. Browser 播放、Backend 媒体探测和后续 AI Worker 通过 Stream 契约解耦；不得把媒体请求逻辑直接写进 API route。

@@ -85,6 +85,28 @@ class EzvizClient:
             raise EzvizResponseError("EZVIZ device detail data is invalid")
         return data
 
+    async def get_live_address(
+        self,
+        device_serial: str,
+        *,
+        channel_no: int,
+        quality: int,
+        expire_seconds: int,
+    ) -> dict[str, Any]:
+        """Request a temporary standard HLS preview address from EZVIZ."""
+        return await self._authorized_post(
+            "/api/lapp/v2/live/address/get",
+            {
+                "deviceSerial": device_serial,
+                "channelNo": channel_no,
+                "protocol": 2,
+                "type": 1,
+                "quality": quality,
+                "expireTime": expire_seconds,
+                "mute": 0,
+            },
+        )
+
     async def check_reachable(self) -> None:
         await self.list_devices_page(page_start=0, page_size=1)
 

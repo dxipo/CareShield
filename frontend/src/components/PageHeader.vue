@@ -8,15 +8,35 @@ defineProps<{
 
 <template>
   <header class="page-header">
-    <p v-if="eyebrow" class="page-header__eyebrow">{{ eyebrow }}</p>
-    <h1>{{ title }}</h1>
-    <p class="page-header__description">{{ description }}</p>
+    <div>
+      <p v-if="eyebrow" class="page-header__eyebrow">{{ eyebrow }}</p>
+      <h1>{{ title }}</h1>
+      <p class="page-header__description">{{ description }}</p>
+    </div>
+    <div v-if="$slots.actions" class="page-header__actions">
+      <slot name="actions" />
+    </div>
   </header>
 </template>
 
 <style scoped>
 .page-header {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
   margin-bottom: 24px;
+  gap: 24px;
+}
+
+.page-header > div:first-child {
+  min-width: 0;
+}
+
+.page-header__actions {
+  display: flex;
+  padding-bottom: 2px;
+  flex: 0 0 auto;
+  gap: 10px;
 }
 
 .page-header__eyebrow {

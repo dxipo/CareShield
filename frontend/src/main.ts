@@ -12,6 +12,7 @@ import {
   ElTag,
 } from 'element-plus'
 import 'element-plus/dist/index.css'
+import '@ezuikit/player-hls/dist/style/css.js'
 
 import App from './App.vue'
 import router from './router'

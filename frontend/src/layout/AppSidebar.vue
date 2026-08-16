@@ -52,8 +52,8 @@ const navigation = [
     <div class="app-sidebar__footer">
       <span class="app-sidebar__footer-dot" aria-hidden="true"></span>
       <div>
-        <strong>M2 Device Integration</strong>
-        <span>EZVIZ 设备接入</span>
+        <strong>M3 Media Pipeline</strong>
+        <span>EZVIZ 实时媒体链路</span>
       </div>
     </div>
   </aside>

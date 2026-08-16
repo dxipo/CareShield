@@ -4,16 +4,17 @@
 
 本项目面向“揭榜挂帅——基于多模态 AI 监测的老年人跌倒风险、心理健康、诈骗识别及预警研究”，计划支持跌倒风险评估、实时跌倒检测和诈骗风险识别。目标摄像设备为 EZVIZ CS-H6c (8WFL, 4mm)。
 
-## 当前阶段：M2 EZVIZ Device Integration
+## 当前阶段：M3 EZVIZ Real-time Media Pipeline
 
-M0 基础工程已经完成并建立 `m0-baseline`，M1 已完成桌面 Dashboard 布局与信息架构。M2 通过独立 Backend Adapter 接入萤石开放平台，支持 AccessToken 生命周期管理、真实设备列表和单设备信息查询。当前仍不包含视频播放、设备控制或 AI 业务，也不包含 CUDA、PyTorch 和 NVIDIA Container Toolkit 依赖。
+M0 基础工程已经完成并建立 `m0-baseline`，M1 已完成桌面 Dashboard，M2 已接入真实萤石设备查询。M3 通过独立 Stream Adapter 获取临时 HLS 地址，使用萤石官方 HLS Web 播放器展示实时画面，并用 ffprobe 验证 Backend/后续 AI 数据链。当前不包含设备控制或 AI 业务，也不包含 CUDA、PyTorch 和 NVIDIA Container Toolkit 依赖。
 
 当前能力状态：
 
 | 能力 | 状态 |
 | --- | --- |
 | EZVIZ device query | Implemented in M2 |
-| Video streaming | Not implemented |
+| EZVIZ HLS live streaming | Implemented in M3 |
+| Media diagnostics | Implemented in M3 |
 | AI | Not implemented |
 | Fall Detection | Not implemented |
 | Fall Risk | Not implemented |
@@ -21,8 +22,8 @@ M0 基础工程已经完成并建立 `m0-baseline`，M1 已完成桌面 Dashboar
 
 ## 技术架构
 
-- Frontend：Vue 3 + TypeScript + Vite + Vue Router + Element Plus
-- Backend：Python + FastAPI + Uvicorn + HTTPX
+- Frontend：Vue 3 + TypeScript + Vite + Vue Router + Element Plus + EZUIKit HLS Player
+- Backend：Python + FastAPI + Uvicorn + HTTPX + ffprobe
 - Data services：PostgreSQL + Redis（M0 尚未接入业务）
 - AI Worker：独立模块，M0 仅预留目录
 - Deployment：Docker Compose
@@ -30,10 +31,12 @@ M0 基础工程已经完成并建立 `m0-baseline`，M1 已完成桌面 Dashboar
 
 浏览器请求相对地址 `/api/*`。开发环境和 Compose 环境均由 Vite 将请求代理到 FastAPI，因此前端不接触 AppSecret 或 AccessToken，也不依赖写死的后端主机地址。
 
-M2 设备调用链：
+M2/M3 设备与媒体调用链：
 
 ```text
 Frontend -> CareShield API Route -> Device Service -> EZVIZ Adapter -> EZVIZ Open API
+Frontend -> CareShield Stream API -> Stream Service -> EZVIZ Stream Adapter -> temporary HLS
+Backend ffprobe -----------------------------> temporary HLS -> safe media metadata
 ```
 
 ## 目录结构
@@ -101,6 +104,13 @@ M2 API：
 - `GET /api/devices`：返回 CareShield 标准化设备列表。
 - `GET /api/devices/{device_serial}`：返回标准化单设备信息。
 
+M3 API：
+
+- `GET /api/devices/{device_serial}/stream`：运行时获取一小时有效的 HLS 预览地址。
+- `GET /api/devices/{device_serial}/media-info`：实时探测并仅返回安全的音视频元数据。
+
+播放地址属于临时敏感资源，仅由 Backend 运行时获取并交给播放器，不写入 `.env`、数据库、日志、测试 fixture 或文档。媒体诊断 API 不返回播放地址。
+
 API 不向浏览器返回 AppSecret 或 AccessToken。普通设备页面会对设备序列号脱敏显示。
 
 ## Docker 启动
@@ -136,6 +146,12 @@ cd frontend
 npm run build
 ```
 
+本机通过 CareShield API 获取临时地址并执行真实 ffprobe（只输出媒体元数据）：
+
+```bash
+python3 scripts/probe_ezviz_stream.py
+```
+
 ## M0 已完成内容
 
 - Vue 3 + TypeScript + Vite 简单状态页
@@ -166,6 +182,17 @@ npm run build
 
 更多 Adapter 说明和安全调试方法见 [docs/ezviz-integration.md](docs/ezviz-integration.md)。
 
+## M3 当前已完成内容
+
+- 通过官方 `POST /api/lapp/v2/live/address/get` 获取标准 HLS 实时预览地址
+- Stream Route、Service、EZVIZ Stream Adapter 分层，API 不直接访问第三方 HTTP
+- `/monitor` 使用官方 `@ezuikit/player-hls`，支持连接状态、刷新和重新获取临时地址
+- Backend 镜像内安装 ffprobe，`media-info` 只返回 codec、分辨率、帧率和音频信息
+- 本机诊断脚本不硬编码、不打印、不保存设备序列号、Token、Secret 或播放地址
+- Stream 和媒体映射使用 Mock/Fake 的单元测试，不依赖真实 H6c 或网络
+
+更多协议选择、安全边界与调试方式见 [docs/ezviz-streaming.md](docs/ezviz-streaming.md)。
+
 ## 尚未实现
 
-EZVIZ 视频播放、HLS/RTMP/HTTP-FLV、设备控制、截图、回放、音频、设备事件、FFmpeg/PyAV、WebSocket、ASR、姿态估计、AI 模型、跌倒检测、跌倒风险评估、诈骗识别、用户系统、业务数据库表、告警业务和 Nginx 访问链路均未实现。
+RTMP/HTTP-FLV、PTZ、截图、云录像、历史回放、双向语音、设备事件、PyAV、WebSocket、ASR、姿态估计、AI 模型、跌倒检测、跌倒风险评估、诈骗识别、用户系统、业务数据库表、告警业务和 Nginx 访问链路均未实现。M3 只验证实时播放与媒体消费链路，音频是否可用以真实 ffprobe 结果为准。

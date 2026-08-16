@@ -42,7 +42,7 @@ export class ApiRequestError extends Error {
   }
 }
 
-async function requestJson<T>(path: string, signal?: AbortSignal): Promise<T> {
+export async function requestJson<T>(path: string, signal?: AbortSignal): Promise<T> {
   const response = await fetch(path, { signal })
   if (!response.ok) {
     let detail = `请求失败（HTTP ${response.status}）`
