@@ -4,9 +4,9 @@
 
 本项目面向“揭榜挂帅——基于多模态 AI 监测的老年人跌倒风险、心理健康、诈骗识别及预警研究”，计划支持跌倒风险评估、实时跌倒检测和诈骗风险识别。目标摄像设备为 EZVIZ CS-H6c (8WFL, 4mm)。
 
-## 当前阶段：M0
+## 当前阶段：M1 Web 平台基础壳
 
-M0 只验证基础工程、前后端 HTTP 通信及 PostgreSQL/Redis 容器健康状态，不包含摄像头、视频或 AI 业务实现，也不包含 CUDA、PyTorch 和 NVIDIA Container Toolkit 依赖。
+M0 基础工程已经完成并建立 `m0-baseline`。M1 当前只建设桌面 Dashboard 布局、页面导航与 Empty State，并继续使用真实的 Backend health API。当前不包含摄像头、视频或 AI 业务实现，也不包含 CUDA、PyTorch 和 NVIDIA Container Toolkit 依赖。
 
 当前能力状态：
 
@@ -21,7 +21,7 @@ M0 只验证基础工程、前后端 HTTP 通信及 PostgreSQL/Redis 容器健�
 
 ## 技术架构
 
-- Frontend：Vue 3 + TypeScript + Vite
+- Frontend：Vue 3 + TypeScript + Vite + Vue Router + Element Plus
 - Backend：Python + FastAPI + Uvicorn
 - Data services：PostgreSQL + Redis（M0 尚未接入业务）
 - AI Worker：独立模块，M0 仅预留目录
@@ -119,6 +119,14 @@ npm run build
 - Frontend、Backend、PostgreSQL、Redis Compose 服务
 - PostgreSQL 与 Redis 容器 health check
 - AI Worker、共享契约、Nginx、数据与模型目录占位说明
+
+## M1 当前已完成内容
+
+- 统一的桌面 Dashboard 布局、侧边导航和顶部栏
+- 综合首页、实时监测、跌倒风险、跌倒检测、诈骗风险、风险事件、设备管理、算法管理和系统状态路由
+- 无真实业务数据区域统一显示“未接入”或 Empty State
+- Dashboard 与系统状态页继续读取真实 `GET /api/health`
+- 摄像头、风险趋势与事件区域仅提供明确占位，不使用测试视频或模拟 AI 数据
 
 ## 尚未实现
 

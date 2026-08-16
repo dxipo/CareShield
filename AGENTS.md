@@ -2,11 +2,11 @@
 
 ## 项目用途
 
-本项目是“颐安盾——多模态居家老人智能风险防控平台”（Elderly AI Safety Platform），服务于老年人跌倒风险评估、实时跌倒检测和诈骗风险识别研究。当前阶段为 M0，仅建设可运行、可测试、可容器化的基础工程。
+本项目是“颐安盾——多模态居家老人智能风险防控平台”（Elderly AI Safety Platform），服务于老年人跌倒风险评估、实时跌倒检测和诈骗风险识别研究。M0 基础工程已完成并建立 baseline；当前 M1 仅建设 Web 平台基础壳与信息架构，不实现真实设备、视频、AI 或业务数据。
 
 ## 固定技术栈
 
-- Frontend：Vue 3、TypeScript、Vite；后续 UI 使用 Element Plus、图表使用 ECharts。
+- Frontend：Vue 3、TypeScript、Vite、Vue Router、Element Plus；存在真实图表数据需求时再使用 ECharts。
 - Backend：Python、FastAPI、Uvicorn。
 - AI Worker：后续使用 Python、PyTorch，必须独立于 Backend。
 - Infrastructure：PostgreSQL、Redis、Docker Compose；需要时再引入 Nginx。
