@@ -33,6 +33,9 @@ class StreamService:
             device_serial,
             channel_no=channel_no,
             quality=1 if quality == "high" else 2,
+            support_h265=True,
+            container_format=0,
+            mute=False,
         )
         return StreamPlayback(
             device_id=device.id,
@@ -40,6 +43,9 @@ class StreamService:
             playback_url=str(stream["playback_url"]),
             expires_at=stream["expires_at"],
             quality=quality,
+            requested_video_codec="h265",
+            container="mpeg-ts",
+            muted=False,
         )
 
     def _require_adapter(self) -> EzvizStreamAdapter:

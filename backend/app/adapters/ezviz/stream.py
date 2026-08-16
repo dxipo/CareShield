@@ -23,6 +23,9 @@ class EzvizStreamAdapter:
         channel_no: int,
         quality: int,
         expire_seconds: int = 3600,
+        support_h265: bool = True,
+        container_format: int = 0,
+        mute: bool = False,
     ) -> dict[str, str | None]:
         try:
             payload = await self.client.get_live_address(
@@ -30,6 +33,9 @@ class EzvizStreamAdapter:
                 channel_no=channel_no,
                 quality=quality,
                 expire_seconds=expire_seconds,
+                support_h265=support_h265,
+                container_format=container_format,
+                mute=mute,
             )
         except EzvizApiError as exc:
             if exc.code in {"20001", "20002"}:

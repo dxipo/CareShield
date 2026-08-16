@@ -1,4 +1,4 @@
-# EZVIZ Real-time Streaming (M3)
+# EZVIZ Real-time Streaming (M3 / M3.1)
 
 M3 只建立真实 H6c 的浏览器播放与 Ubuntu/ffprobe 消费链路，不包含 AI、设备控制、回放、截图或双向语音。
 
@@ -24,9 +24,9 @@ Backend 保持 `Route -> StreamService -> EzvizStreamAdapter -> EZVIZ Open API`�
 POST https://open.ys7.com/api/lapp/v2/live/address/get
 ```
 
-M3 固定请求实时预览（`type=1`）、HLS（`protocol=2`）、主码流（`quality=1`）、音频不静音（`mute=0`）和 3600 秒有效期。官方接口允许的有效期范围更大，但一小时足以覆盖当前实时会话，也降低地址泄露后的暴露窗口。
+M3.1 固定请求实时预览（`type=1`）、HLS（`protocol=2`）、主码流（`quality=1`）、H.265 能力（`supportH265=1`）、TS 封装（`containerFormat=0`）、音频不静音（`mute=0`）和 3600 秒有效期。官方兼容性表仅列出 H.265 直播的 TS 封装，因此不选择 fMP4。官方接口允许的有效期范围更大，但一小时足以覆盖当前实时会话，也降低地址泄露后的暴露窗口。
 
-HLS 同时适合浏览器和 ffprobe。现代浏览器不原生支持 RTMP；M3 不为协议数量引入 RTMP/HTTP-FLV 转封装。浏览器播放器使用萤石官方 `@ezuikit/player-hls` 2.0.0，其 `auto` 解码模式优先使用 HLS.js/MSE，浏览器无法解码时可切换 WASM 软解。当前真实设备的标准 HLS manifest 是会更新的短 `ENDLIST` 片段，因此播放器在 `ended` 后依据 SDK 的 live 模式重新加载同一临时地址；地址失效或网络失败时再由用户重连获取新地址。
+HLS 同时适合浏览器和 ffprobe。现代浏览器不原生支持 RTMP；M3 不为协议数量引入 RTMP/HTTP-FLV 转封装。浏览器播放器使用萤石官方 `@ezuikit/player-hls` 2.0.0，并明确选择 WASM/WebGL `soft` 解码；`isEzviz=true` 让官方播放器附加 H.264/H.265 客户端能力标记。当前真实设备的标准 HLS manifest 是短 `ENDLIST` 片段，而官方兼容性表未列出 H.265 的 `ended` 事件。页面因此监测媒体时间推进；停帧超过阈值后通过 Backend 重新取得临时地址并重建播放器，不依赖缺失的事件，也不在前端长期保存地址。
 
 官方资料：
 
@@ -34,7 +34,28 @@ HLS 同时适合浏览器和 ffprobe。现代浏览器不原生支持 RTMP；M3 
 - [直播协议介绍](https://open.ys7.com/help/1752)
 - [HLS 播放器简介](https://open.ys7.com/help/3704)
 - [HLS 播放器安装](https://open.ys7.com/help/3712)
+- [HLS 播放器兼容性](https://open.ys7.com/help/3715)
+- [HLS 播放器事件](https://open.ys7.com/help/3716)
 - [播放器下载与版本](https://open.ys7.com/cn/s/download)
+
+## M3.1 误判修复
+
+旧实现没有发送 `supportH265` 和 `containerFormat`，并设置了 `isEzviz=false`。它还把播放器首帧或时间推进直接当作 `LIVE`。萤石错误提示本身也是一段有效 H.264 视频，因此会同时满足 HTTP 成功、ffprobe 成功和播放器时间推进，造成错误验收。
+
+M3.1 做了两层修正：
+
+- 取流端显式请求 H.265 + TS，并保留音频；浏览器强制使用官方 H.265 软件解码链。
+- 诊断端区分 `probe_success` 与 `camera_content_verified`。ffprobe 只证明媒体可读取，不能证明画面来自摄像机；播放器解码后先显示 `Verification required`，只有人工确认当前画面后才显示 `LIVE`。
+
+不要把 `512×288 / 5 FPS` 写成自动拒绝规则；它只是本次错误提示视频的观测特征，不足以普遍判定媒体内容。
+
+本次对真实 H6c 的临时 HLS 地址进行安全探测并查看临时帧，得到：
+
+- Video：HEVC/H.265 Main，1920×1080，约 15 FPS，yuv420p
+- Audio：AAC LC，16000 Hz，mono
+- Video/Audio bitrate：当前 manifest/ffprobe 未提供
+
+临时帧仅保存在 `/tmp` 验收，不进入仓库；完整设备序列号、播放地址、Token 和 Secret 均未写入文档。
 
 ## 安全边界
 
@@ -55,7 +76,7 @@ Frontend 构建前由 `npm run prepare:hls` 将官方包内的 `decoder.wasm` �
 http://localhost:5173/monitor
 ```
 
-页面会选择真实在线 H6c、请求临时地址并创建播放器。刷新/重连会销毁旧播放器，再从 Backend 请求新地址。
+页面会选择真实在线 H6c、请求临时地址并创建播放器。浏览器音频策略要求用户手势，因此首次连接后需点击“开始实时播放”；播放器保持静音启动，用户可再通过官方音量控件开启声音。刷新/重连会销毁旧播放器，再从 Backend 请求新地址。首帧出现只表示媒体已解码；页面会要求人工确认画面内容，确认前不会显示 `LIVE`。
 
 ## ffprobe
 

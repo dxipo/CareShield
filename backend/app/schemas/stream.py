@@ -10,6 +10,9 @@ class StreamPlayback(BaseModel):
     playback_url: str
     expires_at: str | None = None
     quality: Literal["high", "fluent"]
+    requested_video_codec: Literal["h265"] = "h265"
+    container: Literal["mpeg-ts"] = "mpeg-ts"
+    muted: bool = False
 
 
 class VideoMediaInfo(BaseModel):
@@ -38,5 +41,7 @@ class AudioMediaInfo(BaseModel):
 class MediaInfo(BaseModel):
     device_id: str
     channel_no: int
+    probe_success: bool
+    camera_content_verified: bool
     video: VideoMediaInfo | None = None
     audio: AudioMediaInfo

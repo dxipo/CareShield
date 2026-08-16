@@ -127,6 +127,11 @@ class MediaProbeService:
         return MediaInfo(
             device_id=device_id,
             channel_no=channel_no,
+            probe_success=True,
+            # ffprobe validates transport and decodability, not image meaning.
+            # A compatibility/error clip is still valid media, so camera
+            # content must be confirmed visually by a person.
+            camera_content_verified=False,
             video=video,
             audio=audio,
         )

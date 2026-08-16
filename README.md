@@ -4,17 +4,17 @@
 
 本项目面向“揭榜挂帅——基于多模态 AI 监测的老年人跌倒风险、心理健康、诈骗识别及预警研究”，计划支持跌倒风险评估、实时跌倒检测和诈骗风险识别。目标摄像设备为 EZVIZ CS-H6c (8WFL, 4mm)。
 
-## 当前阶段：M3 EZVIZ Real-time Media Pipeline
+## 当前阶段：M3.1 EZVIZ Real Media Playback Fix
 
-M0 基础工程已经完成并建立 `m0-baseline`，M1 已完成桌面 Dashboard，M2 已接入真实萤石设备查询。M3 通过独立 Stream Adapter 获取临时 HLS 地址，使用萤石官方 HLS Web 播放器展示实时画面，并用 ffprobe 验证 Backend/后续 AI 数据链。当前不包含设备控制或 AI 业务，也不包含 CUDA、PyTorch 和 NVIDIA Container Toolkit 依赖。
+M0 基础工程已经完成并建立 `m0-baseline`，M1 已完成桌面 Dashboard，M2 已接入真实萤石设备查询。M3.1 修正 H.265 摄像机的标准 HLS 能力协商：Backend 显式请求 H.265 + TS + 音频，浏览器使用萤石官方 HLS Player 的 WASM 软件解码，并把“媒体可解码”与“真实摄像画面已人工确认”分开。当前不包含设备控制或 AI 业务，也不包含 CUDA、PyTorch 和 NVIDIA Container Toolkit 依赖。
 
 当前能力状态：
 
 | 能力 | 状态 |
 | --- | --- |
 | EZVIZ device query | Implemented in M2 |
-| EZVIZ HLS live streaming | Implemented in M3 |
-| Media diagnostics | Implemented in M3 |
+| EZVIZ H.265 HLS live streaming | Implemented in M3.1; manual visual verification gate |
+| Media diagnostics | Implemented in M3.1; probe and content verification are separate |
 | AI | Not implemented |
 | Fall Detection | Not implemented |
 | Fall Risk | Not implemented |
@@ -184,10 +184,10 @@ python3 scripts/probe_ezviz_stream.py
 
 ## M3 当前已完成内容
 
-- 通过官方 `POST /api/lapp/v2/live/address/get` 获取标准 HLS 实时预览地址
+- 通过官方 `POST /api/lapp/v2/live/address/get` 显式请求 H.265、TS、非静音的标准 HLS 实时预览地址
 - Stream Route、Service、EZVIZ Stream Adapter 分层，API 不直接访问第三方 HTTP
-- `/monitor` 使用官方 `@ezuikit/player-hls`，支持连接状态、刷新和重新获取临时地址
-- Backend 镜像内安装 ffprobe，`media-info` 只返回 codec、分辨率、帧率和音频信息
+- `/monitor` 使用官方 `@ezuikit/player-hls` WASM 软解；只有人工确认画面内容后才显示 `LIVE`
+- Backend 镜像内安装 ffprobe，`media-info` 返回安全媒体元数据，并明确 `probe_success` 不等于真实摄像画面已验证
 - 本机诊断脚本不硬编码、不打印、不保存设备序列号、Token、Secret 或播放地址
 - Stream 和媒体映射使用 Mock/Fake 的单元测试，不依赖真实 H6c 或网络
 

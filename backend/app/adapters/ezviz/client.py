@@ -92,8 +92,16 @@ class EzvizClient:
         channel_no: int,
         quality: int,
         expire_seconds: int,
+        support_h265: bool,
+        container_format: int,
+        mute: bool,
     ) -> dict[str, Any]:
-        """Request a temporary standard HLS preview address from EZVIZ."""
+        """Request a temporary standard HLS preview address from EZVIZ.
+
+        H.265 capability and its HLS container are deliberately explicit. An
+        omitted capability can make the media endpoint return a decodable
+        compatibility notice instead of the camera stream.
+        """
         return await self._authorized_post(
             "/api/lapp/v2/live/address/get",
             {
@@ -103,7 +111,9 @@ class EzvizClient:
                 "type": 1,
                 "quality": quality,
                 "expireTime": expire_seconds,
-                "mute": 0,
+                "supportH265": int(support_h265),
+                "containerFormat": container_format,
+                "mute": int(mute),
             },
         )
 

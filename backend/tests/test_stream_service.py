@@ -1,9 +1,12 @@
 import asyncio
 import logging
 from typing import Any
+from urllib.parse import parse_qs
 
+import httpx
 import pytest
 
+from app.adapters.ezviz.client import EzvizClient
 from app.adapters.ezviz.exceptions import (
     EzvizApiError,
     EzvizDeviceNotFoundError,
@@ -73,15 +76,71 @@ def test_stream_response_mapping_and_request_parameters(caplog: pytest.LogCaptur
     assert stream.protocol == "hls"
     assert stream.playback_url == playback_url
     assert stream.expires_at == "2026-08-16 13:00:00"
+    assert stream.requested_video_codec == "h265"
+    assert stream.container == "mpeg-ts"
+    assert stream.muted is False
     assert client.calls == [
         {
             "device_serial": "TEST123456",
             "channel_no": 1,
             "quality": 1,
             "expire_seconds": 3600,
+            "support_h265": True,
+            "container_format": 0,
+            "mute": False,
         }
     ]
     assert playback_url not in caplog.text
+
+
+def test_live_address_posts_h265_ts_and_unmuted_parameters() -> None:
+    observed_form: dict[str, list[str]] = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/api/lapp/token/get":
+            return httpx.Response(
+                200,
+                json={
+                    "code": "200",
+                    "data": {
+                        "accessToken": "test-token",
+                        "expireTime": 4_000_000_000_000,
+                    },
+                },
+            )
+        observed_form.update(parse_qs(request.content.decode()))
+        return httpx.Response(
+            200,
+            json={"code": "200", "data": {"url": "https://example.invalid/live.m3u8"}},
+        )
+
+    async def scenario() -> None:
+        client = EzvizClient(
+            EzvizSettings("example-key", "example-secret"),
+            transport=httpx.MockTransport(handler),
+        )
+        try:
+            await client.get_live_address(
+                "TEST123456",
+                channel_no=1,
+                quality=1,
+                expire_seconds=3600,
+                support_h265=True,
+                container_format=0,
+                mute=False,
+            )
+        finally:
+            await client.close()
+
+    asyncio.run(scenario())
+
+    assert observed_form["protocol"] == ["2"]
+    assert observed_form["quality"] == ["1"]
+    assert observed_form["channelNo"] == ["1"]
+    assert observed_form["expireTime"] == ["3600"]
+    assert observed_form["supportH265"] == ["1"]
+    assert observed_form["containerFormat"] == ["0"]
+    assert observed_form["mute"] == ["0"]
 
 
 def test_missing_device_is_preserved() -> None:

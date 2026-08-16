@@ -7,6 +7,9 @@ export interface StreamPlayback {
   playback_url: string
   expires_at: string | null
   quality: 'high' | 'fluent'
+  requested_video_codec: 'h265'
+  container: 'mpeg-ts'
+  muted: boolean
 }
 
 export interface VideoMediaInfo {
@@ -35,6 +38,8 @@ export interface AudioMediaInfo {
 export interface MediaInfo {
   device_id: string
   channel_no: number
+  probe_success: boolean
+  camera_content_verified: boolean
   video: VideoMediaInfo | null
   audio: AudioMediaInfo
 }

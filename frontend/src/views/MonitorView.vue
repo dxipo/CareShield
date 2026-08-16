@@ -7,11 +7,23 @@ import { fetchDevices, type DeviceSummary } from '../api/devices'
 import { fetchLiveStream, fetchMediaInfo, type MediaInfo } from '../api/streams'
 import PageHeader from '../components/PageHeader.vue'
 
-type MonitorState = 'loading' | 'connecting' | 'live' | 'offline' | 'unavailable' | 'error'
+type MonitorState =
+  | 'loading'
+  | 'connecting'
+  | 'media-ready'
+  | 'live'
+  | 'offline'
+  | 'unavailable'
+  | 'encoding-error'
+  | 'error'
 
 const state = ref<MonitorState>('loading')
 const selectedDevice = ref<DeviceSummary | null>(null)
 const protocol = ref<string | null>(null)
+const containerFormat = ref<string | null>(null)
+const requestedCodec = ref<string | null>(null)
+const activeDecoder = ref<string | null>(null)
+const playerPrepared = ref(false)
 const diagnostics = ref<MediaInfo | null>(null)
 const diagnosticsLoading = ref(false)
 const playerContainer = ref<HTMLElement | null>(null)
@@ -19,14 +31,19 @@ let player: HLSPlayer | null = null
 let requestController: AbortController | null = null
 let resizeObserver: ResizeObserver | null = null
 let replayTimer: number | null = null
+let progressWatchdog: number | null = null
+let startPreparedStream: (() => void) | null = null
+let recoveryInProgress = false
 
 const stateLabel = computed(() => {
   const labels: Record<MonitorState, string> = {
     loading: 'Loading',
     connecting: 'Connecting',
+    'media-ready': 'Verification required',
     live: 'LIVE',
     offline: 'Offline',
     unavailable: 'Unavailable',
+    'encoding-error': 'Encoding incompatible',
     error: 'Playback error',
   }
   return labels[state.value]
@@ -34,14 +51,26 @@ const stateLabel = computed(() => {
 
 const stateTagType = computed(() => {
   if (state.value === 'live') return 'success'
-  if (state.value === 'offline' || state.value === 'error') return 'danger'
+  if (state.value === 'media-ready') return 'warning'
+  if (
+    state.value === 'offline' ||
+    state.value === 'encoding-error' ||
+    state.value === 'error'
+  ) return 'danger'
   return 'info'
 })
 
+const showBlockingPlaceholder = computed(() =>
+  !['media-ready', 'live'].includes(state.value),
+)
+
 const placeholderMessage = computed(() => {
   if (state.value === 'loading') return '正在获取设备...'
-  if (state.value === 'connecting') return '正在连接摄像头...'
+  if (state.value === 'connecting') {
+    return playerPrepared.value ? '播放器已准备，请点击开始实时播放' : '正在连接摄像头...'
+  }
   if (state.value === 'offline') return '摄像头当前离线'
+  if (state.value === 'encoding-error') return '视频编码或浏览器解码不兼容'
   if (state.value === 'error') return '浏览器播放失败，请尝试重新连接'
   return '暂时无法获取实时视频'
 })
@@ -73,6 +102,12 @@ function destroyPlayer(): void {
     window.clearTimeout(replayTimer)
     replayTimer = null
   }
+  if (progressWatchdog !== null) {
+    window.clearInterval(progressWatchdog)
+    progressWatchdog = null
+  }
+  startPreparedStream = null
+  playerPrepared.value = false
   resizeObserver?.disconnect()
   resizeObserver = null
   if (player) {
@@ -84,7 +119,10 @@ function destroyPlayer(): void {
   }
 }
 
-async function initializePlayer(playbackUrl: string): Promise<void> {
+async function initializePlayer(
+  playbackUrl: string,
+  recoverStalledStream: () => void,
+): Promise<void> {
   await nextTick()
   const container = playerContainer.value
   if (!container) throw new Error('Player container is unavailable')
@@ -101,11 +139,17 @@ async function initializePlayer(playbackUrl: string): Promise<void> {
     scaleMode: 0,
     autoPlay: false,
     isLive: true,
-    // This is already a signed standard HLS URL. Appending EZVIZ vc=3 would
-    // negotiate H.265 and force an avoidable browser fallback.
-    isEzviz: false,
-    decoderType: 'auto',
+    // EZVIZ H.265 live streams require the official client capability marker.
+    isEzviz: true,
+    // H.265 TS is decoded by the official WASM/WebGL software path rather
+    // than relying on browser-native HEVC support.
+    decoderType: 'soft',
     staticPath: '/ezuikit-hls/',
+    // Keep autoplay reliable. The server still returns audio (mute=0), and
+    // the player volume control can be used to enable sound after interaction.
+    // The SDK 2.0.0 theme declaration incorrectly narrows this option to the
+    // literal false although the runtime and official README accept boolean.
+    muted: true as never,
     disableCollect: true,
     language: 'zh',
     loggerOptions: { name: 'CareShield HLS', level: 'WARN', showTime: false },
@@ -117,40 +161,95 @@ async function initializePlayer(playbackUrl: string): Promise<void> {
     recordOptions: null as never,
   })
 
-  const markLive = () => {
-    state.value = 'live'
+  const markMediaReady = () => {
+    lastProgressAt = Date.now()
+    if (state.value === 'connecting') state.value = 'media-ready'
   }
-  const markError = () => {
+  const markError = (encoding = false) => {
     if (state.value !== 'loading') state.value = 'error'
+    if (encoding) state.value = 'encoding-error'
   }
   player = currentPlayer
-  currentPlayer.on(HLSPlayer.HLSEVENTS.firstFrameDisplay, markLive)
-  // The hard-decoder path does not emit firstFrameDisplay in SDK 2.0.0;
-  // TIME_UPDATE confirms that the underlying video has decoded and advanced.
-  currentPlayer.on(HLSPlayer.HLSEVENTS.TIME_UPDATE, markLive)
-  currentPlayer.on(HLSPlayer.HLSEVENTS.ERROR, markError)
-  currentPlayer.on(HLSPlayer.HLSEVENTS.NETWORK_ERROR, markError)
-  currentPlayer.on(HLSPlayer.HLSEVENTS.MEDIA_ERROR, markError)
+  currentPlayer.on(HLSPlayer.HLSEVENTS.INIT_SUCCESS, (detail: unknown) => {
+    const decoder = (detail as { decoderType?: unknown } | null)?.decoderType
+    activeDecoder.value = typeof decoder === 'string' ? decoder : 'soft'
+  })
+  currentPlayer.on(HLSPlayer.HLSEVENTS.firstFrameDisplay, markMediaReady)
+  currentPlayer.on(HLSPlayer.HLSEVENTS.TIME_UPDATE, markMediaReady)
+  currentPlayer.on(HLSPlayer.HLSEVENTS.ERROR, () => markError(false))
+  currentPlayer.on(HLSPlayer.HLSEVENTS.NETWORK_ERROR, () => markError(false))
+  currentPlayer.on(HLSPlayer.HLSEVENTS.MEDIA_ERROR, () => markError(true))
+  currentPlayer.on(HLSPlayer.HLSEVENTS.WASM_FAILED, () => markError(true))
 
+  let lastProgressAt = Date.now()
+  let playPending = false
   const playCurrentStream = () => {
-    if (player !== currentPlayer) return
-    void currentPlayer.play().catch((error: unknown) => {
-      if (player !== currentPlayer) return
-      if (error instanceof DOMException && error.name === 'AbortError') return
-      markError()
-    })
+    if (player !== currentPlayer || playPending) return
+    playPending = true
+    lastProgressAt = Date.now()
+    void currentPlayer
+      .play(playbackUrl)
+      .catch((error: unknown) => {
+        if (player !== currentPlayer) return
+        if (error instanceof DOMException && error.name === 'AbortError') return
+        markError(false)
+      })
+      .finally(() => {
+        playPending = false
+      })
   }
   currentPlayer.on(HLSPlayer.HLSEVENTS.ENDED, () => {
     if (player !== currentPlayer) return
-    replayTimer = window.setTimeout(playCurrentStream, 250)
+    replayTimer = window.setTimeout(recoverStalledStream, 250)
   })
-  playCurrentStream()
+  // The official compatibility table does not expose `ended` for H.265.
+  // Reload a live playlist when media progress stops instead of treating the
+  // last decoded frame as an active stream.
+  progressWatchdog = window.setInterval(() => {
+    if (player !== currentPlayer || !['media-ready', 'live'].includes(state.value)) return
+    if (Date.now() - lastProgressAt > 4_000) {
+      lastProgressAt = Date.now()
+      recoverStalledStream()
+    }
+  }, 2_000)
+  startPreparedStream = playCurrentStream
+  playerPrepared.value = true
 
   resizeObserver = new ResizeObserver(([entry]) => {
     if (!entry || !player) return
     player.resize(Math.max(entry.contentRect.width, 1), Math.max(entry.contentRect.height, 1))
   })
   resizeObserver.observe(container)
+}
+
+async function recoverPlayback(
+  device: DeviceSummary,
+  channelNo: number,
+  signal: AbortSignal,
+): Promise<void> {
+  if (recoveryInProgress || signal.aborted) return
+  recoveryInProgress = true
+  try {
+    const playback = await fetchLiveStream(device.device_serial, channelNo, signal)
+    protocol.value = playback.protocol.toUpperCase()
+    containerFormat.value = playback.container.toUpperCase()
+    requestedCodec.value = playback.requested_video_codec.toUpperCase()
+    await initializePlayer(
+      playback.playback_url,
+      () => void recoverPlayback(device, channelNo, signal),
+    )
+    startPreparedStream?.()
+  } catch (error) {
+    if (!(error instanceof DOMException && error.name === 'AbortError')) {
+      state.value = 'error'
+    }
+  } finally {
+    recoveryInProgress = false
+  }
+}
+
+function startPlayback(): void {
+  startPreparedStream?.()
 }
 
 async function loadDiagnostics(device: DeviceSummary, channelNo: number, signal: AbortSignal) {
@@ -173,7 +272,12 @@ async function connect(): Promise<void> {
   requestController = new AbortController()
   const { signal } = requestController
   state.value = 'loading'
+  recoveryInProgress = false
   protocol.value = null
+  containerFormat.value = null
+  requestedCodec.value = null
+  activeDecoder.value = null
+  playerPrepared.value = false
   diagnostics.value = null
 
   try {
@@ -193,13 +297,22 @@ async function connect(): Promise<void> {
     state.value = 'connecting'
     const playback = await fetchLiveStream(device.device_serial, channelNo, signal)
     protocol.value = playback.protocol.toUpperCase()
+    containerFormat.value = playback.container.toUpperCase()
+    requestedCodec.value = playback.requested_video_codec.toUpperCase()
     void loadDiagnostics(device, channelNo, signal)
-    await initializePlayer(playback.playback_url)
+    await initializePlayer(
+      playback.playback_url,
+      () => void recoverPlayback(device, channelNo, signal),
+    )
   } catch (error) {
     if (!(error instanceof DOMException && error.name === 'AbortError')) {
       state.value = 'unavailable'
     }
   }
+}
+
+function confirmCameraContent(): void {
+  if (state.value === 'media-ready') state.value = 'live'
 }
 
 function formatBitrate(value: number | null | undefined): string {
@@ -241,18 +354,35 @@ onBeforeUnmount(() => {
             </el-tag>
             <el-tag effect="dark" :type="stateTagType">{{ stateLabel }}</el-tag>
             <el-tag v-if="protocol" effect="plain">{{ protocol }}</el-tag>
+            <el-tag v-if="requestedCodec" effect="plain">{{ requestedCodec }}</el-tag>
           </div>
         </div>
 
         <div class="monitor-workspace__viewport">
           <div ref="playerContainer" class="monitor-workspace__player"></div>
-          <div v-if="state !== 'live'" class="monitor-workspace__placeholder">
+          <div v-if="showBlockingPlaceholder" class="monitor-workspace__placeholder">
             <el-icon :size="38"><VideoCamera /></el-icon>
             <strong>{{ placeholderMessage }}</strong>
             <span v-if="state === 'error' || state === 'unavailable'">
               播放地址不会被保存；可使用上方按钮重新获取临时地址。
             </span>
+            <el-button
+              v-if="state === 'connecting' && playerPrepared"
+              type="primary"
+              @click="startPlayback"
+            >
+              开始实时播放
+            </el-button>
           </div>
+        </div>
+        <div v-if="state === 'media-ready'" class="monitor-workspace__verification">
+          <div>
+            <strong>请进行人工画面确认</strong>
+            <span>确认当前显示的是摄像机实时内容，而不是萤石平台生成的错误提示视频。</span>
+          </div>
+          <el-button type="warning" plain @click="confirmCameraContent">
+            确认这是实时画面
+          </el-button>
         </div>
       </article>
 
@@ -266,11 +396,17 @@ onBeforeUnmount(() => {
         </div>
         <dl>
           <div><dt>设备</dt><dd>{{ selectedDevice?.model || 'Not detected' }}</dd></div>
-          <div><dt>Stream</dt><dd>{{ state === 'live' ? 'Connected' : stateLabel }}</dd></div>
+          <div><dt>Stream</dt><dd>{{ ['media-ready', 'live'].includes(state) ? 'Decoded' : stateLabel }}</dd></div>
+          <div><dt>Camera Content</dt><dd>{{ state === 'live' ? 'Manually verified' : 'Verification required' }}</dd></div>
+          <div><dt>Requested Codec</dt><dd>{{ requestedCodec || 'Not requested' }}</dd></div>
+          <div><dt>Container</dt><dd>{{ containerFormat || 'Not requested' }}</dd></div>
+          <div><dt>Browser Decoder</dt><dd>{{ activeDecoder || 'Not initialized' }}</dd></div>
+          <div><dt>Probe</dt><dd>{{ diagnostics?.probe_success ? 'Success' : 'Not probed' }}</dd></div>
           <div><dt>Video Codec</dt><dd>{{ diagnostics?.video?.codec_name || 'Not probed' }}</dd></div>
           <div><dt>Resolution</dt><dd>{{ resolution }}</dd></div>
           <div><dt>FPS</dt><dd>{{ diagnostics?.video?.fps ?? 'Not probed' }}</dd></div>
           <div><dt>Pixel Format</dt><dd>{{ diagnostics?.video?.pixel_format || 'Not probed' }}</dd></div>
+          <div><dt>Profile</dt><dd>{{ diagnostics?.video?.profile || 'Not probed' }}</dd></div>
           <div><dt>Video Bitrate</dt><dd>{{ formatBitrate(diagnostics?.video?.bitrate) }}</dd></div>
           <div>
             <dt>Audio</dt>
@@ -279,6 +415,7 @@ onBeforeUnmount(() => {
           <div><dt>Audio Codec</dt><dd>{{ diagnostics ? (diagnostics.audio.codec_name || 'Unavailable') : 'Not probed' }}</dd></div>
           <div><dt>Sample Rate</dt><dd>{{ diagnostics ? (diagnostics.audio.sample_rate ? `${diagnostics.audio.sample_rate} Hz` : 'Unavailable') : 'Not probed' }}</dd></div>
           <div><dt>Channels</dt><dd>{{ diagnostics ? (diagnostics.audio.channels ?? 'Unavailable') : 'Not probed' }}</dd></div>
+          <div><dt>Audio Bitrate</dt><dd>{{ formatBitrate(diagnostics?.audio.bitrate) }}</dd></div>
         </dl>
         <p>诊断数据由 Backend ffprobe 实时读取，不包含播放地址或访问凭据。</p>
       </aside>
@@ -336,6 +473,36 @@ onBeforeUnmount(() => {
   font-size: 12px;
   line-height: 1.7;
   text-align: center;
+}
+
+.monitor-workspace__verification {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  margin-top: 14px;
+  padding: 12px 14px;
+  border: 1px solid rgb(230 162 60 / 55%);
+  border-radius: 9px;
+  color: #f4d7a2;
+  background: rgb(12 21 19 / 90%);
+  font-size: 12px;
+}
+
+.monitor-workspace__verification > div {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.monitor-workspace__verification strong {
+  color: #ffe1ac;
+  font-size: 13px;
+}
+
+.monitor-workspace__verification span {
+  color: #b8c9c4;
+  line-height: 1.6;
 }
 
 .diagnostics-panel {

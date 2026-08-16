@@ -33,6 +33,8 @@ def test_ffprobe_metadata_mapping_with_audio() -> None:
     )
 
     assert result.video is not None
+    assert result.probe_success is True
+    assert result.camera_content_verified is False
     assert result.video.codec_name == "h264"
     assert result.video.width == 1920
     assert result.video.fps == 24.975
@@ -51,5 +53,28 @@ def test_ffprobe_metadata_mapping_without_audio() -> None:
     )
 
     assert result.video is not None
+    assert result.probe_success is True
+    assert result.camera_content_verified is False
     assert result.audio.available is False
     assert result.audio.codec_name is None
+
+
+def test_decodable_placeholder_is_not_treated_as_verified_camera_content() -> None:
+    result = MediaProbeService.parse_payload(
+        {
+            "streams": [
+                {
+                    "codec_type": "video",
+                    "codec_name": "h264",
+                    "width": 512,
+                    "height": 288,
+                    "avg_frame_rate": "5/1",
+                }
+            ]
+        },
+        device_id="ezviz_safeid",
+        channel_no=1,
+    )
+
+    assert result.probe_success is True
+    assert result.camera_content_verified is False
