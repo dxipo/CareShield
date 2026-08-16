@@ -9,11 +9,30 @@ import {
   VideoCamera,
   Warning,
 } from '@element-plus/icons-vue'
+import { onMounted, ref } from 'vue'
 
+import { ApiRequestError, fetchDevices } from '../api/devices'
 import BackendStatusPanel from '../components/BackendStatusPanel.vue'
 import EmptyState from '../components/EmptyState.vue'
 import PageHeader from '../components/PageHeader.vue'
 import StatusCard from '../components/StatusCard.vue'
+
+const onlineDeviceValue = ref('--')
+const onlineDeviceDescription = ref('正在获取设备')
+
+async function loadOnlineDevices() {
+  try {
+    const devices = await fetchDevices()
+    onlineDeviceValue.value = String(devices.filter((device) => device.online === true).length)
+    onlineDeviceDescription.value = `共 ${devices.length} 台设备`
+  } catch (error) {
+    onlineDeviceValue.value = '--'
+    onlineDeviceDescription.value =
+      error instanceof ApiRequestError && error.status === 503 ? '设备尚未配置' : '数据获取失败'
+  }
+}
+
+onMounted(loadOnlineDevices)
 </script>
 
 <template>
@@ -34,7 +53,13 @@ import StatusCard from '../components/StatusCard.vue'
       <StatusCard title="跌倒风险" value="--" description="模型未接入" :icon="TrendCharts" />
       <StatusCard title="跌倒检测" value="--" description="暂无数据" :icon="Warning" />
       <StatusCard title="诈骗风险" value="--" description="模型未接入" :icon="Lock" />
-      <StatusCard title="在线设备" value="--" description="设备未接入" :icon="Camera" />
+      <StatusCard
+        title="在线设备"
+        :value="onlineDeviceValue"
+        :description="onlineDeviceDescription"
+        :icon="Camera"
+        :tone="onlineDeviceValue === '--' ? 'neutral' : 'success'"
+      />
     </section>
 
     <section class="dashboard-primary-grid">

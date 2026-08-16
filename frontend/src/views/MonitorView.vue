@@ -16,7 +16,7 @@ const connectionStates = [
     <PageHeader
       eyebrow="LIVE MONITOR"
       title="实时监测"
-      description="用于未来查看摄像设备实时画面与连接状态。M1 不接入设备或测试视频。"
+      description="用于未来查看摄像设备实时画面与连接状态。M2 仅查询设备信息，不接入视频或测试视频。"
     />
 
     <section class="monitor-layout">

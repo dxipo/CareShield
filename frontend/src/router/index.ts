@@ -3,6 +3,7 @@ import { createRouter, createWebHistory } from 'vue-router'
 import AppLayout from '../layout/AppLayout.vue'
 
 const DashboardView = () => import('../views/DashboardView.vue')
+const DevicesView = () => import('../views/DevicesView.vue')
 const ModulePlaceholderView = () => import('../views/ModulePlaceholderView.vue')
 const MonitorView = () => import('../views/MonitorView.vue')
 const SystemView = () => import('../views/SystemView.vue')
@@ -103,14 +104,7 @@ const router = createRouter({
         {
           path: 'devices',
           name: 'devices',
-          component: ModulePlaceholderView,
-          props: {
-            title: '设备管理',
-            description: '用于未来管理摄像设备、接入状态与设备配置。',
-            emptyTitle: '萤石设备尚未接入',
-            emptyDescription: '当前阶段不调用萤石开放平台或设备 API。',
-            iconName: 'camera',
-          },
+          component: DevicesView,
           meta: {
             title: '设备管理',
             subtitle: '摄像设备与接入状态',

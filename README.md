@@ -4,15 +4,15 @@
 
 本项目面向“揭榜挂帅——基于多模态 AI 监测的老年人跌倒风险、心理健康、诈骗识别及预警研究”，计划支持跌倒风险评估、实时跌倒检测和诈骗风险识别。目标摄像设备为 EZVIZ CS-H6c (8WFL, 4mm)。
 
-## 当前阶段：M1 Web 平台基础壳
+## 当前阶段：M2 EZVIZ Device Integration
 
-M0 基础工程已经完成并建立 `m0-baseline`。M1 当前只建设桌面 Dashboard 布局、页面导航与 Empty State，并继续使用真实的 Backend health API。当前不包含摄像头、视频或 AI 业务实现，也不包含 CUDA、PyTorch 和 NVIDIA Container Toolkit 依赖。
+M0 基础工程已经完成并建立 `m0-baseline`，M1 已完成桌面 Dashboard 布局与信息架构。M2 通过独立 Backend Adapter 接入萤石开放平台，支持 AccessToken 生命周期管理、真实设备列表和单设备信息查询。当前仍不包含视频播放、设备控制或 AI 业务，也不包含 CUDA、PyTorch 和 NVIDIA Container Toolkit 依赖。
 
 当前能力状态：
 
 | 能力 | 状态 |
 | --- | --- |
-| EZVIZ | Not implemented |
+| EZVIZ device query | Implemented in M2 |
 | Video streaming | Not implemented |
 | AI | Not implemented |
 | Fall Detection | Not implemented |
@@ -22,13 +22,19 @@ M0 基础工程已经完成并建立 `m0-baseline`。M1 当前只建设桌面 Da
 ## 技术架构
 
 - Frontend：Vue 3 + TypeScript + Vite + Vue Router + Element Plus
-- Backend：Python + FastAPI + Uvicorn
+- Backend：Python + FastAPI + Uvicorn + HTTPX
 - Data services：PostgreSQL + Redis（M0 尚未接入业务）
 - AI Worker：独立模块，M0 仅预留目录
 - Deployment：Docker Compose
 - Reverse proxy：Nginx 目录已预留，M0 不加入访问链路
 
-浏览器请求相对地址 `/api/health`。开发环境和 Compose 环境均由 Vite 将该请求代理到 FastAPI，因此前端不依赖写死的后端主机地址。
+浏览器请求相对地址 `/api/*`。开发环境和 Compose 环境均由 Vite 将请求代理到 FastAPI，因此前端不接触 AppSecret 或 AccessToken，也不依赖写死的后端主机地址。
+
+M2 设备调用链：
+
+```text
+Frontend -> CareShield API Route -> Device Service -> EZVIZ Adapter -> EZVIZ Open API
+```
 
 ## 目录结构
 
@@ -75,7 +81,27 @@ npm install
 npm run dev
 ```
 
-访问 <http://localhost:5173>。页面应显示 `Frontend Status: OK`，并显示后端返回的 `status` 与 `service`。后端健康检查也可直接访问 <http://localhost:8000/api/health>。
+访问 <http://localhost:5173>。后端健康检查可直接访问 <http://localhost:8000/api/health>。
+
+### 配置 EZVIZ
+
+仅在本机仓库根目录的 `.env` 中配置真实凭据：
+
+```env
+EZVIZ_APP_KEY=your_app_key
+EZVIZ_APP_SECRET=your_app_secret
+EZVIZ_API_BASE_URL=https://open.ys7.com
+```
+
+真实 AppKey、AppSecret 和 AccessToken 不得写入前端、文档或 Git。未配置时 Backend 仍可启动，`GET /api/health` 保持正常，EZVIZ 状态显示为未配置。修改配置后需重启 Backend。
+
+M2 API：
+
+- `GET /api/integrations/ezviz/status`：仅返回是否已配置、是否可达及安全错误摘要。
+- `GET /api/devices`：返回 CareShield 标准化设备列表。
+- `GET /api/devices/{device_serial}`：返回标准化单设备信息。
+
+API 不向浏览器返回 AppSecret 或 AccessToken。普通设备页面会对设备序列号脱敏显示。
 
 ## Docker 启动
 
@@ -128,6 +154,18 @@ npm run build
 - Dashboard 与系统状态页继续读取真实 `GET /api/health`
 - 摄像头、风险趋势与事件区域仅提供明确占位，不使用测试视频或模拟 AI 数据
 
+## M2 当前已完成内容
+
+- EZVIZ AppKey/AppSecret 仅从 Backend 环境变量读取
+- AccessToken 进程内缓存、按官方 `expireTime` 临期刷新，并处理 `10002` 失效返回
+- 真实萤石设备分页查询和单设备详情查询
+- CareShield 标准化 Device Schema，不透传萤石原始响应
+- `/devices` 的 Loading、未配置、无设备、失败和真实设备列表状态
+- Dashboard 在线设备卡片读取真实 `/api/devices` 结果
+- EZVIZ HTTP 调用使用 Mock Transport 的 Backend 单元测试，不依赖真实网络
+
+更多 Adapter 说明和安全调试方法见 [docs/ezviz-integration.md](docs/ezviz-integration.md)。
+
 ## 尚未实现
 
-萤石开放平台和设备 Adapter、视频流、音频、设备事件、FFmpeg/PyAV、ASR、姿态估计、AI 模型、跌倒检测、跌倒风险评估、诈骗识别、用户系统、业务数据库表、告警业务和 Nginx 访问链路均未实现。
+EZVIZ 视频播放、HLS/RTMP/HTTP-FLV、设备控制、截图、回放、音频、设备事件、FFmpeg/PyAV、WebSocket、ASR、姿态估计、AI 模型、跌倒检测、跌倒风险评估、诈骗识别、用户系统、业务数据库表、告警业务和 Nginx 访问链路均未实现。

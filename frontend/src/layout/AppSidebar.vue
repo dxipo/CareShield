@@ -52,8 +52,8 @@ const navigation = [
     <div class="app-sidebar__footer">
       <span class="app-sidebar__footer-dot" aria-hidden="true"></span>
       <div>
-        <strong>M1 Web Platform</strong>
-        <span>基础信息架构</span>
+        <strong>M2 Device Integration</strong>
+        <span>EZVIZ 设备接入</span>
       </div>
     </div>
   </aside>
