@@ -1,0 +1,32 @@
+# Environment and secrets
+.env
+.env.*
+!.env.example
+
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.venv/
+venv/
+
+# Node.js / Vite
+node_modules/
+frontend/dist/
+*.local
+
+# Editors and operating systems
+.idea/
+.vscode/
+.DS_Store
+
+# Logs
+*.log
+
+# Runtime data and model artifacts
+data/*
+!data/README.md
+models/*
+!models/README.md
