@@ -36,3 +36,32 @@ def load_ezviz_settings() -> EzvizSettings:
             "https://open.ys7.com",
         ).strip().rstrip("/"),
     )
+
+
+@dataclass(frozen=True, slots=True)
+class AiRealtimeSettings:
+    app_env: str
+    redis_url: str
+    shared_token: str
+    worker_ttl_seconds: int
+    latest_result_ttl_seconds: int
+
+    @property
+    def configured(self) -> bool:
+        return bool(self.shared_token)
+
+    @property
+    def development(self) -> bool:
+        return self.app_env.lower() == "development"
+
+
+def load_ai_realtime_settings() -> AiRealtimeSettings:
+    return AiRealtimeSettings(
+        app_env=os.getenv("APP_ENV", "development").strip(),
+        redis_url=os.getenv("REDIS_URL", "redis://localhost:6379/0").strip(),
+        shared_token=os.getenv("AI_WORKER_SHARED_TOKEN", "").strip(),
+        worker_ttl_seconds=int(os.getenv("AI_WORKER_TTL_SECONDS", "30")),
+        latest_result_ttl_seconds=int(
+            os.getenv("AI_LATEST_RESULT_TTL_SECONDS", "3600")
+        ),
+    )

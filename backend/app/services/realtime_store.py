@@ -1,0 +1,63 @@
+import hashlib
+
+from redis.asyncio import Redis
+
+from careshield_contracts import AlgorithmResult, WorkerHeartbeat
+
+from app.core.config import AiRealtimeSettings
+
+
+class RealtimeStore:
+    """Small Redis store for expiring worker state and latest results."""
+
+    WORKER_PREFIX = "ai:worker:"
+    LATEST_PREFIX = "ai:latest:"
+
+    def __init__(self, settings: AiRealtimeSettings) -> None:
+        self._settings = settings
+        self._redis = Redis.from_url(settings.redis_url, decode_responses=True)
+
+    async def ping(self) -> bool:
+        return bool(await self._redis.ping())
+
+    async def save_worker(self, heartbeat: WorkerHeartbeat) -> None:
+        await self._redis.set(
+            f"{self.WORKER_PREFIX}{heartbeat.worker_id}",
+            heartbeat.model_dump_json(),
+            ex=self._settings.worker_ttl_seconds,
+        )
+
+    async def list_workers(self) -> list[WorkerHeartbeat]:
+        workers: list[WorkerHeartbeat] = []
+        async for key in self._redis.scan_iter(match=f"{self.WORKER_PREFIX}*"):
+            payload = await self._redis.get(key)
+            if payload:
+                workers.append(WorkerHeartbeat.model_validate_json(payload))
+        return sorted(workers, key=lambda worker: worker.worker_id)
+
+    async def save_latest_result(self, result: AlgorithmResult) -> None:
+        await self._redis.set(
+            self._latest_key(result.task.value, result.device_id),
+            result.model_dump_json(),
+            ex=self._settings.latest_result_ttl_seconds,
+        )
+
+    async def get_latest_result(
+        self,
+        task: str,
+        device_id: str | None = None,
+    ) -> AlgorithmResult | None:
+        payload = await self._redis.get(self._latest_key(task, device_id))
+        return AlgorithmResult.model_validate_json(payload) if payload else None
+
+    async def close(self) -> None:
+        await self._redis.aclose()
+
+    @classmethod
+    def _latest_key(cls, task: str, device_id: str | None) -> str:
+        device_key = (
+            hashlib.sha256(device_id.encode()).hexdigest()[:16]
+            if device_id
+            else "global"
+        )
+        return f"{cls.LATEST_PREFIX}{task}:{device_key}"

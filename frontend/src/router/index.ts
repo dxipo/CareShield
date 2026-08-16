@@ -3,6 +3,7 @@ import { createRouter, createWebHistory } from 'vue-router'
 import AppLayout from '../layout/AppLayout.vue'
 
 const DashboardView = () => import('../views/DashboardView.vue')
+const AlgorithmsView = () => import('../views/AlgorithmsView.vue')
 const DevicesView = () => import('../views/DevicesView.vue')
 const ModulePlaceholderView = () => import('../views/ModulePlaceholderView.vue')
 const MonitorView = () => import('../views/MonitorView.vue')
@@ -113,14 +114,7 @@ const router = createRouter({
         {
           path: 'algorithms',
           name: 'algorithms',
-          component: ModulePlaceholderView,
-          props: {
-            title: '算法管理',
-            description: '用于未来查看算法模块、版本和服务状态。',
-            emptyTitle: 'AI Worker 尚未接入',
-            emptyDescription: '当前阶段没有模型、推理任务或算法输出。',
-            iconName: 'cpu',
-          },
+          component: AlgorithmsView,
           meta: {
             title: '算法管理',
             subtitle: 'AI Worker 与算法模块',

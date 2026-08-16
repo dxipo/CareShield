@@ -1,12 +1,17 @@
-from app.core.config import load_ezviz_settings
+from app.core.config import load_ai_realtime_settings, load_ezviz_settings
+from app.services.ai_realtime_service import AiRealtimeService
 from app.services.device_service import DeviceService
 from app.services.media_probe_service import MediaProbeService
+from app.services.realtime_hub import RealtimeHub
+from app.services.realtime_store import RealtimeStore
 from app.services.stream_service import StreamService
 
 
 _device_service: DeviceService | None = None
 _stream_service: StreamService | None = None
 _media_probe_service: MediaProbeService | None = None
+_realtime_hub = RealtimeHub()
+_ai_realtime_service: AiRealtimeService | None = None
 
 
 async def get_device_service() -> DeviceService:
@@ -30,6 +35,18 @@ async def get_media_probe_service() -> MediaProbeService:
     return _media_probe_service
 
 
+async def get_realtime_hub() -> RealtimeHub:
+    return _realtime_hub
+
+
+async def get_ai_realtime_service() -> AiRealtimeService:
+    global _ai_realtime_service
+    if _ai_realtime_service is None:
+        store = RealtimeStore(load_ai_realtime_settings())
+        _ai_realtime_service = AiRealtimeService(store, _realtime_hub)
+    return _ai_realtime_service
+
+
 async def close_device_service() -> None:
     global _device_service, _stream_service, _media_probe_service
     _media_probe_service = None
@@ -37,3 +54,10 @@ async def close_device_service() -> None:
     if _device_service is not None:
         await _device_service.close()
         _device_service = None
+
+
+async def close_ai_realtime_service() -> None:
+    global _ai_realtime_service
+    if _ai_realtime_service is not None:
+        await _ai_realtime_service.close()
+        _ai_realtime_service = None

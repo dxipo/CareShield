@@ -52,8 +52,8 @@ const navigation = [
     <div class="app-sidebar__footer">
       <span class="app-sidebar__footer-dot" aria-hidden="true"></span>
       <div>
-        <strong>M3 Media Pipeline</strong>
-        <span>EZVIZ 实时媒体链路</span>
+        <strong>M4 Realtime Pipeline</strong>
+        <span>AI 结果实时基础设施</span>
       </div>
     </div>
   </aside>

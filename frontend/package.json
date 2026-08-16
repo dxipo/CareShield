@@ -9,6 +9,7 @@
     "dev": "vite --host 0.0.0.0",
     "prebuild": "npm run prepare:hls",
     "build": "vue-tsc -b && vite build",
+    "test": "vitest run",
     "preview": "vite preview --host 0.0.0.0"
   },
   "dependencies": {
@@ -23,6 +24,7 @@
     "@vitejs/plugin-vue": "^6.0.1",
     "typescript": "~5.8.3",
     "vite": "^7.1.2",
+    "vitest": "^4.1.10",
     "vue-tsc": "^3.0.5"
   }
 }

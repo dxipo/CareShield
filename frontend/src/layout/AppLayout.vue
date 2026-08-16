@@ -1,8 +1,13 @@
 <script setup lang="ts">
+import { onBeforeUnmount, onMounted } from 'vue'
 import { RouterView } from 'vue-router'
 
+import { connectRealtime, disconnectRealtime } from '../realtime'
 import AppSidebar from './AppSidebar.vue'
 import AppTopbar from './AppTopbar.vue'
+
+onMounted(connectRealtime)
+onBeforeUnmount(disconnectRealtime)
 </script>
 
 <template>

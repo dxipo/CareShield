@@ -2,13 +2,13 @@
 
 ## 项目用途
 
-本项目是“颐安盾——多模态居家老人智能风险防控平台”（Elderly AI Safety Platform），服务于老年人跌倒风险评估、实时跌倒检测和诈骗风险识别研究。M0 基础工程、M1 Web 平台壳和 M2 真实设备查询已完成；当前 M3 仅接入真实 EZVIZ HLS 实时流与 ffprobe 媒体诊断，不实现 AI 或其他业务数据。
+本项目是“颐安盾——多模态居家老人智能风险防控平台”（Elderly AI Safety Platform），服务于老年人跌倒风险评估、实时跌倒检测和诈骗风险识别研究。M0–M3.1 已完成基础工程、Web 平台、真实 EZVIZ 设备与媒体链；当前 M4 只建立独立 AI Worker、统一算法结果契约、Redis 状态和 WebSocket 实时通道，不实现真实 AI。
 
 ## 固定技术栈
 
 - Frontend：Vue 3、TypeScript、Vite、Vue Router、Element Plus；存在真实图表数据需求时再使用 ECharts。
 - Backend：Python、FastAPI、Uvicorn。
-- AI Worker：后续使用 Python、PyTorch，必须独立于 Backend。
+- AI Worker：M4 使用 Python + FastAPI/httpx 的 CPU-only 基础设施；后续模型阶段再评估 PyTorch，必须独立于 Backend。
 - Infrastructure：PostgreSQL、Redis、Docker Compose；需要时再引入 Nginx。
 - Video：M3 使用 EZVIZ 官方 HLS Player 与 ffprobe；后续 AI Worker 可使用 FFmpeg、PyAV。
 
@@ -18,7 +18,7 @@
 
 - `frontend/`：用户界面与 API 调用，不包含 AI 推理和设备接入逻辑。
 - `backend/`：API、业务服务、配置、数据契约及适配器入口，不在 route 中实现 AI 推理。
-- `ai-worker/`：独立 AI 任务；M0 仅预留结构。
+- `ai-worker/`：独立 Worker health、heartbeat 与统一结果发布；M4 不含模型或推理。
 - `shared/`：跨模块 API schema、事件契约和算法结果契约说明。
 - `infra/`：部署基础设施配置。
 - `data/`：本地运行数据，数据文件不提交 Git。

@@ -4,9 +4,9 @@
 
 本项目面向“揭榜挂帅——基于多模态 AI 监测的老年人跌倒风险、心理健康、诈骗识别及预警研究”，计划支持跌倒风险评估、实时跌倒检测和诈骗风险识别。目标摄像设备为 EZVIZ CS-H6c (8WFL, 4mm)。
 
-## 当前阶段：M3.1 EZVIZ Real Media Playback Fix
+## 当前阶段：M4 AI Realtime Pipeline
 
-M0 基础工程已经完成并建立 `m0-baseline`，M1 已完成桌面 Dashboard，M2 已接入真实萤石设备查询。M3.1 修正 H.265 摄像机的标准 HLS 能力协商：Backend 显式请求 H.265 + TS + 音频，浏览器使用萤石官方 HLS Player 的 WASM 软件解码，并把“媒体可解码”与“真实摄像画面已人工确认”分开。当前不包含设备控制或 AI 业务，也不包含 CUDA、PyTorch 和 NVIDIA Container Toolkit 依赖。
+M0–M3.1 已完成基础工程、Dashboard、真实萤石设备和 H.265 实时音视频链路。M4 新增独立 CPU-only AI Worker、统一 `AlgorithmResult`、内部鉴权、Redis 实时状态、单一 WebSocket 和 Vue realtime client。M4 只验证基础设施，未安装或运行任何真实 AI 模型，也不包含 CUDA、PyTorch 和 NVIDIA Container Toolkit。
 
 当前能力状态：
 
@@ -15,7 +15,8 @@ M0 基础工程已经完成并建立 `m0-baseline`，M1 已完成桌面 Dashboar
 | EZVIZ device query | Implemented in M2 |
 | EZVIZ H.265 HLS live streaming | Implemented in M3.1; manual visual verification gate |
 | Media diagnostics | Implemented in M3.1; probe and content verification are separate |
-| AI | Not implemented |
+| AI realtime infrastructure | Implemented in M4; pipeline test is explicitly simulated |
+| AI models | Not installed |
 | Fall Detection | Not implemented |
 | Fall Risk | Not implemented |
 | Fraud Detection | Not implemented |
@@ -23,13 +24,19 @@ M0 基础工程已经完成并建立 `m0-baseline`，M1 已完成桌面 Dashboar
 ## 技术架构
 
 - Frontend：Vue 3 + TypeScript + Vite + Vue Router + Element Plus + EZUIKit HLS Player
-- Backend：Python + FastAPI + Uvicorn + HTTPX + ffprobe
-- Data services：PostgreSQL + Redis（M0 尚未接入业务）
-- AI Worker：独立模块，M0 仅预留目录
+- Backend：Python + FastAPI + Uvicorn + HTTPX + Redis client + ffprobe
+- Data services：PostgreSQL + Redis（M4 用于 Worker TTL 和 latest result）
+- AI Worker：独立 CPU-only FastAPI 服务，统一发布结果与 heartbeat
 - Deployment：Docker Compose
 - Reverse proxy：Nginx 目录已预留，M0 不加入访问链路
 
 浏览器请求相对地址 `/api/*`。开发环境和 Compose 环境均由 Vite 将请求代理到 FastAPI，因此前端不接触 AppSecret 或 AccessToken，也不依赖写死的后端主机地址。
+
+M4 实时结果链：
+
+```text
+AI Worker -> ResultPublisher -> Backend internal API -> Redis -> /ws/realtime -> Vue
+```
 
 M2/M3 设备与媒体调用链：
 
@@ -45,8 +52,8 @@ Backend ffprobe -----------------------------> temporary HLS -> safe media metad
 .
 ├── frontend/          # Vue 前端
 ├── backend/           # FastAPI 后端
-├── ai-worker/         # 独立 AI Worker 预留目录
-├── shared/            # 跨模块契约说明
+├── ai-worker/         # 独立 CPU-only Worker 服务
+├── shared/            # Backend / Worker 共享数据契约
 ├── infra/nginx/       # Nginx 配置预留
 ├── data/              # 本地数据（内容不入库）
 ├── models/            # 模型权重（内容不入库）
@@ -63,7 +70,7 @@ Backend ffprobe -----------------------------> temporary HLS -> safe media metad
 - Python 3.11+
 - Docker Engine 与 Docker Compose v2（Docker 启动方式需要）
 
-M0 不要求 GPU。未来的 RTX 4090、CUDA 和 PyTorch 支持将在 AI Worker 阶段单独引入。
+M4 不要求 GPU。未来的 RTX 4090、CUDA 和 PyTorch 支持将在真实模型阶段单独引入。
 
 ## 本地启动
 
@@ -73,7 +80,7 @@ M0 不要求 GPU。未来的 RTX 4090、CUDA 和 PyTorch 支持将在 AI Worker 
 python3 -m venv .venv
 source .venv/bin/activate
 python -m pip install -r backend/requirements-dev.txt
-uvicorn app.main:app --app-dir backend --reload --port 8000
+PYTHONPATH=shared/python uvicorn app.main:app --app-dir backend --reload --port 8000
 ```
 
 另开终端启动前端：
@@ -85,6 +92,12 @@ npm run dev
 ```
 
 访问 <http://localhost:5173>。后端健康检查可直接访问 <http://localhost:8000/api/health>。
+
+本地运行 AI Worker 时同样加载共享契约（需先启动 Redis 与 Backend，并配置内部 token）：
+
+```bash
+PYTHONPATH=shared/python uvicorn app.main:app --app-dir ai-worker --reload --port 8080
+```
 
 ### 配置 EZVIZ
 
@@ -108,6 +121,14 @@ M3 API：
 
 - `GET /api/devices/{device_serial}/stream`：运行时获取一小时有效的 HLS 预览地址。
 - `GET /api/devices/{device_serial}/media-info`：实时探测并仅返回安全的音视频元数据。
+
+M4 API：
+
+- `GET /api/algorithms`：Worker、Redis、capabilities 和最近 pipeline test 状态。
+- `GET /api/algorithms/workers`：当前 TTL 内的在线 Worker。
+- `GET /api/system/status`：Backend、Redis 和 AI Worker 安全状态摘要。
+- `POST /internal/ai/results`、`POST /internal/ai/heartbeat`：需要内部 Bearer token，不供浏览器调用。
+- `/ws/realtime`：浏览器唯一实时通道。
 
 播放地址属于临时敏感资源，仅由 Backend 运行时获取并交给播放器，不写入 `.env`、数据库、日志、测试 fixture 或文档。媒体诊断 API 不返回播放地址。
 
@@ -137,6 +158,14 @@ docker compose down
 
 ```bash
 python -m pytest backend/tests
+```
+
+AI Worker 与 Frontend realtime 测试：
+
+```bash
+python -m pytest ai-worker/tests
+cd frontend
+npm test
 ```
 
 前端类型检查与生产构建：
@@ -193,6 +222,18 @@ python3 scripts/probe_ezviz_stream.py
 
 更多协议选择、安全边界与调试方式见 [docs/ezviz-streaming.md](docs/ezviz-streaming.md)。
 
+## M4 当前已完成内容
+
+- Backend 与 AI Worker 共用唯一 `AlgorithmResult` 契约，score、task、level 和模拟标记均强校验
+- 独立 AI Worker health、真实 capabilities、heartbeat 与统一 `ResultPublisher`
+- 内部 Bearer 鉴权，Worker 短 TTL 和 Redis latest result TTL
+- 单一 `/ws/realtime` envelope 与 Vue 集中式自动重连客户端
+- `/algorithms` 显示真实 Worker、Redis、WebSocket 和未安装模型状态
+- `/system` 显示真实 AI 基础设施状态
+- 开发用 pipeline test 明确 `simulated=true`，不进入 Dashboard 或风险业务页面
+
+架构、契约与安全策略见 [docs/ai-realtime-pipeline.md](docs/ai-realtime-pipeline.md)。
+
 ## 尚未实现
 
-RTMP/HTTP-FLV、PTZ、截图、云录像、历史回放、双向语音、设备事件、PyAV、WebSocket、ASR、姿态估计、AI 模型、跌倒检测、跌倒风险评估、诈骗识别、用户系统、业务数据库表、告警业务和 Nginx 访问链路均未实现。M3 只验证实时播放与媒体消费链路，音频是否可用以真实 ffprobe 结果为准。
+RTMP/HTTP-FLV、PTZ、截图、云录像、历史回放、双向语音、设备事件、PyAV、ASR、姿态估计、AI 模型、跌倒检测、跌倒风险评估、诈骗识别、用户系统、业务数据库表、告警业务和 Nginx 访问链路均未实现。M4 的 pipeline test 只是明确标记的传输诊断，不是 AI 输出。

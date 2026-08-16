@@ -13,15 +13,24 @@ services:
 
   backend:
     build:
-      context: ./backend
+      context: .
+      dockerfile: backend/Dockerfile
       args:
         PIP_INDEX_URL: ${PIP_INDEX_URL:-https://pypi.org/simple}
     environment:
+      APP_ENV: ${APP_ENV:-development}
+      REDIS_URL: redis://redis:6379/0
+      AI_WORKER_SHARED_TOKEN: ${AI_WORKER_SHARED_TOKEN:?Set AI_WORKER_SHARED_TOKEN in .env}
+      AI_WORKER_TTL_SECONDS: ${AI_WORKER_TTL_SECONDS:-30}
+      AI_LATEST_RESULT_TTL_SECONDS: ${AI_LATEST_RESULT_TTL_SECONDS:-3600}
       EZVIZ_APP_KEY: ${EZVIZ_APP_KEY:-}
       EZVIZ_APP_SECRET: ${EZVIZ_APP_SECRET:-}
       EZVIZ_API_BASE_URL: ${EZVIZ_API_BASE_URL:-https://open.ys7.com}
     ports:
       - "8000:8000"
+    depends_on:
+      redis:
+        condition: service_healthy
     healthcheck:
       test:
         [
@@ -29,6 +38,36 @@ services:
           "python",
           "-c",
           "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/health')",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 5s
+    restart: unless-stopped
+
+  ai-worker:
+    build:
+      context: .
+      dockerfile: ai-worker/Dockerfile
+      args:
+        PIP_INDEX_URL: ${PIP_INDEX_URL:-https://pypi.org/simple}
+    environment:
+      APP_ENV: ${APP_ENV:-development}
+      BACKEND_INTERNAL_URL: http://backend:8000
+      AI_WORKER_SHARED_TOKEN: ${AI_WORKER_SHARED_TOKEN:?Set AI_WORKER_SHARED_TOKEN in .env}
+      AI_WORKER_ID: ${AI_WORKER_ID:-careshield-worker-1}
+      AI_WORKER_VERSION: ${AI_WORKER_VERSION:-0.4.0}
+      AI_WORKER_HEARTBEAT_INTERVAL_SECONDS: ${AI_WORKER_HEARTBEAT_INTERVAL_SECONDS:-10}
+    depends_on:
+      backend:
+        condition: service_healthy
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://localhost:8080/health')",
         ]
       interval: 10s
       timeout: 5s
