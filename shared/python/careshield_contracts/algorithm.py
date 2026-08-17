@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from datetime import datetime
 from enum import Enum
-from typing import Literal
+from typing import Literal, TypeAlias
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, field_validator, model_validator
@@ -23,6 +23,16 @@ class RiskLevel(str, Enum):
     MEDIUM = "medium"
     HIGH = "high"
     CRITICAL = "critical"
+
+
+CapabilityState: TypeAlias = Literal[
+    "not_installed",
+    "installed",
+    "starting",
+    "running",
+    "unavailable",
+    "error",
+]
 
 
 class AlgorithmResult(BaseModel):
@@ -61,9 +71,9 @@ class AlgorithmResult(BaseModel):
 class AlgorithmCapabilities(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    fall_detection: Literal["not_installed"] = "not_installed"
-    fall_risk: Literal["not_installed"] = "not_installed"
-    fraud_detection: Literal["not_installed"] = "not_installed"
+    fall_detection: CapabilityState = "not_installed"
+    fall_risk: CapabilityState = "not_installed"
+    fraud_detection: CapabilityState = "not_installed"
 
 
 class WorkerHeartbeat(BaseModel):
@@ -74,6 +84,7 @@ class WorkerHeartbeat(BaseModel):
     timestamp: datetime
     version: str = Field(min_length=1, max_length=64)
     capabilities: AlgorithmCapabilities
+    runtime: dict[str, JsonValue] = Field(default_factory=dict)
 
     @field_validator("timestamp")
     @classmethod

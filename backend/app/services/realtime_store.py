@@ -36,11 +36,18 @@ class RealtimeStore:
         return sorted(workers, key=lambda worker: worker.worker_id)
 
     async def save_latest_result(self, result: AlgorithmResult) -> None:
-        await self._redis.set(
-            self._latest_key(result.task.value, result.device_id),
-            result.model_dump_json(),
-            ex=self._settings.latest_result_ttl_seconds,
-        )
+        payload = result.model_dump_json()
+        keys = {self._latest_key(result.task.value, result.device_id)}
+        if result.device_id is not None:
+            # A global alias lets the UI recover the latest result after reload;
+            # the device-specific key remains available for future multi-camera use.
+            keys.add(self._latest_key(result.task.value, None))
+        for key in keys:
+            await self._redis.set(
+                key,
+                payload,
+                ex=self._settings.latest_result_ttl_seconds,
+            )
 
     async def get_latest_result(
         self,

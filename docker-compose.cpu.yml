@@ -1,0 +1,5 @@
+services:
+  ai-worker:
+    gpus: !reset []
+    environment:
+      AI_DEVICE: cpu

@@ -26,6 +26,9 @@ const loadError = ref(false)
 let refreshTimer: ReturnType<typeof setInterval> | null = null
 
 const activeWorker = computed(() => latestWorkerStatus.value ?? worker.value)
+const activeCapabilities = computed(
+  () => activeWorker.value?.capabilities ?? capabilities.value,
+)
 const socketLabel = computed(() =>
   realtimeStatus.value === 'connected' ? 'Connected' : 'Disconnected',
 )
@@ -37,6 +40,24 @@ function formatTime(value: string | null | undefined): string {
     dateStyle: 'medium',
     timeStyle: 'medium',
   }).format(new Date(value))
+}
+
+function capabilityLabel(value: string): string {
+  return {
+    not_installed: 'Not Installed',
+    installed: 'Installed',
+    starting: 'Starting',
+    running: 'Running',
+    unavailable: 'Unavailable',
+    error: 'Error',
+  }[value] ?? value
+}
+
+function capabilityTag(value: string): 'success' | 'warning' | 'danger' | 'info' {
+  if (value === 'running') return 'success'
+  if (value === 'starting' || value === 'installed') return 'warning'
+  if (value === 'unavailable' || value === 'error') return 'danger'
+  return 'info'
 }
 
 async function loadStatus() {
@@ -71,7 +92,7 @@ onBeforeUnmount(() => {
     <PageHeader
       eyebrow="AI INFRASTRUCTURE"
       title="算法管理"
-      description="查看 AI Worker、统一实时通道与算法能力的真实基础设施状态。M4 未安装任何 AI 模型。"
+      description="查看 AI Worker、统一实时通道与真实算法能力状态。M5 仅接入跌倒检测基线。"
     />
 
     <div v-if="loadError" class="status-notice status-notice--error">算法基础设施状态暂时不可用</div>
@@ -111,12 +132,12 @@ onBeforeUnmount(() => {
     <section class="panel-card algorithm-capabilities">
       <div class="panel-card__header">
         <div><span class="panel-card__kicker">ALGORITHM CAPABILITIES</span><h2>模型能力</h2></div>
-        <span class="panel-card__hint">M4 仅提供传输基础设施</span>
+        <span class="panel-card__hint">状态来自 Worker heartbeat</span>
       </div>
       <div class="capability-grid">
-        <div><strong>Fall Detection</strong><el-tag type="info" effect="plain">Not Installed</el-tag></div>
-        <div><strong>Fall Risk</strong><el-tag type="info" effect="plain">Not Installed</el-tag></div>
-        <div><strong>Fraud Detection</strong><el-tag type="info" effect="plain">Not Installed</el-tag></div>
+        <div><strong>Fall Detection</strong><el-tag :type="capabilityTag(activeCapabilities.fall_detection)" effect="plain">{{ capabilityLabel(activeCapabilities.fall_detection) }}</el-tag></div>
+        <div><strong>Fall Risk</strong><el-tag :type="capabilityTag(activeCapabilities.fall_risk)" effect="plain">{{ capabilityLabel(activeCapabilities.fall_risk) }}</el-tag></div>
+        <div><strong>Fraud Detection</strong><el-tag :type="capabilityTag(activeCapabilities.fraud_detection)" effect="plain">{{ capabilityLabel(activeCapabilities.fraud_detection) }}</el-tag></div>
       </div>
     </section>
 

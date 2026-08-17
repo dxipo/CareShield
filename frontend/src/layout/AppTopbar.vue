@@ -17,10 +17,10 @@ const subtitle = computed(() =>
       <p>{{ subtitle }}</p>
     </div>
     <div class="app-topbar__meta">
-      <span class="app-topbar__phase">M4</span>
+      <span class="app-topbar__phase">M5</span>
       <div>
         <strong>Elderly AI Safety Platform</strong>
-        <span>AI realtime infrastructure</span>
+        <span>Real fall detection baseline</span>
       </div>
     </div>
   </header>

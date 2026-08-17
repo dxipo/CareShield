@@ -4,9 +4,9 @@
 
 本项目面向“揭榜挂帅——基于多模态 AI 监测的老年人跌倒风险、心理健康、诈骗识别及预警研究”，计划支持跌倒风险评估、实时跌倒检测和诈骗风险识别。目标摄像设备为 EZVIZ CS-H6c (8WFL, 4mm)。
 
-## 当前阶段：M4 AI Realtime Pipeline
+## 当前阶段：M5 Real Fall Detection Baseline
 
-M0–M3.1 已完成基础工程、Dashboard、真实萤石设备和 H.265 实时音视频链路。M4 新增独立 CPU-only AI Worker、统一 `AlgorithmResult`、内部鉴权、Redis 实时状态、单一 WebSocket 和 Vue realtime client。M4 只验证基础设施，未安装或运行任何真实 AI 模型，也不包含 CUDA、PyTorch 和 NVIDIA Container Toolkit。
+M0–M4 已完成基础工程、Dashboard、真实萤石 H.265 音视频和统一实时结果链。M5 在独立 AI Worker 中首次接入 RTX 4090、H.265 解码、官方预训练人体姿态模型和时序跌倒检测基线，并沿用 M4 `AlgorithmResult -> Redis -> WebSocket -> Vue` 架构。
 
 当前能力状态：
 
@@ -16,8 +16,8 @@ M0–M3.1 已完成基础工程、Dashboard、真实萤石设备和 H.265 实时
 | EZVIZ H.265 HLS live streaming | Implemented in M3.1; manual visual verification gate |
 | Media diagnostics | Implemented in M3.1; probe and content verification are separate |
 | AI realtime infrastructure | Implemented in M4; pipeline test is explicitly simulated |
-| AI models | Not installed |
-| Fall Detection | Not implemented |
+| AI models | YOLO26n-pose installed in M5 Worker only |
+| Fall Detection | M5 real pose + temporal heuristic baseline |
 | Fall Risk | Not implemented |
 | Fraud Detection | Not implemented |
 
@@ -26,7 +26,7 @@ M0–M3.1 已完成基础工程、Dashboard、真实萤石设备和 H.265 实时
 - Frontend：Vue 3 + TypeScript + Vite + Vue Router + Element Plus + EZUIKit HLS Player
 - Backend：Python + FastAPI + Uvicorn + HTTPX + Redis client + ffprobe
 - Data services：PostgreSQL + Redis（M4 用于 Worker TTL 和 latest result）
-- AI Worker：独立 CPU-only FastAPI 服务，统一发布结果与 heartbeat
+- AI Worker：独立 FastAPI + PyTorch/CUDA + Ultralytics + PyAV 服务
 - Deployment：Docker Compose
 - Reverse proxy：Nginx 目录已预留，M0 不加入访问链路
 
@@ -36,6 +36,13 @@ M4 实时结果链：
 
 ```text
 AI Worker -> ResultPublisher -> Backend internal API -> Redis -> /ws/realtime -> Vue
+```
+
+M5 真实跌倒检测链：
+
+```text
+H6c -> Backend authenticated temporary stream -> AI Worker H.265 decode
+     -> frame sampling -> pose -> temporal detector -> M4 realtime result chain
 ```
 
 M2/M3 设备与媒体调用链：
@@ -52,7 +59,7 @@ Backend ffprobe -----------------------------> temporary HLS -> safe media metad
 .
 ├── frontend/          # Vue 前端
 ├── backend/           # FastAPI 后端
-├── ai-worker/         # 独立 CPU-only Worker 服务
+├── ai-worker/         # 独立 GPU/CPU Worker 与跌倒检测
 ├── shared/            # Backend / Worker 共享数据契约
 ├── infra/nginx/       # Nginx 配置预留
 ├── data/              # 本地数据（内容不入库）
@@ -70,7 +77,7 @@ Backend ffprobe -----------------------------> temporary HLS -> safe media metad
 - Python 3.11+
 - Docker Engine 与 Docker Compose v2（Docker 启动方式需要）
 
-M4 不要求 GPU。未来的 RTX 4090、CUDA 和 PyTorch 支持将在真实模型阶段单独引入。
+M5 GPU 验收环境需要 RTX 4090、正常 NVIDIA Driver 和 NVIDIA Container Toolkit。核心平台仍可独立运行；无 GPU 时使用 CPU Compose override，跌倒检测应显示 unavailable，不能伪装为 Normal。
 
 ## 本地启动
 
@@ -93,9 +100,11 @@ npm run dev
 
 访问 <http://localhost:5173>。后端健康检查可直接访问 <http://localhost:8000/api/health>。
 
-本地运行 AI Worker 时同样加载共享契约（需先启动 Redis 与 Backend，并配置内部 token）：
+本地运行 AI Worker 时同样加载共享契约（需先启动 Redis 与 Backend、配置内部 token，并安装 GPU requirements）：
 
 ```bash
+python -m pip install --index-url https://download.pytorch.org/whl/cu130 -r ai-worker/requirements-gpu.txt
+python -m pip install -r ai-worker/requirements-dev.txt
 PYTHONPATH=shared/python uvicorn app.main:app --app-dir ai-worker --reload --port 8080
 ```
 
@@ -130,6 +139,11 @@ M4 API：
 - `POST /internal/ai/results`、`POST /internal/ai/heartbeat`：需要内部 Bearer token，不供浏览器调用。
 - `/ws/realtime`：浏览器唯一实时通道。
 
+M5 内部媒体 API（仅 AI Worker Bearer 鉴权）：
+
+- `GET /internal/media/devices`：Worker 查询标准化在线设备。
+- `GET /internal/media/devices/{device_serial}/stream`：运行时签发临时 HLS；不供浏览器和第三方调用。
+
 播放地址属于临时敏感资源，仅由 Backend 运行时获取并交给播放器，不写入 `.env`、数据库、日志、测试 fixture 或文档。媒体诊断 API 不返回播放地址。
 
 API 不向浏览器返回 AppSecret 或 AccessToken。普通设备页面会对设备序列号脱敏显示。
@@ -142,6 +156,12 @@ API 不向浏览器返回 AppSecret 或 AccessToken。普通设备页面会对�
 cp .env.example .env
 docker compose up -d --build
 docker compose ps
+```
+
+无 GPU 环境使用：
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.cpu.yml up -d --build
 ```
 
 访问 <http://localhost:5173>。停止服务：
@@ -234,6 +254,18 @@ python3 scripts/probe_ezviz_stream.py
 
 架构、契约与安全策略见 [docs/ai-realtime-pipeline.md](docs/ai-realtime-pipeline.md)。
 
+## M5 当前已完成内容
+
+- AI Worker 通过内部鉴权向 Backend 获取临时 H6c HLS，不持有 EZVIZ Secret
+- PyAV/FFmpeg 解码、可配置采样和自动重新获取临时地址
+- YOLO26n-pose CUDA 推理与 CareShield 标准 Pose Schema
+- 归一化姿态特征、持续时间状态机和明确的 heuristic score
+- `fall_detection` 真实结果固定 `simulated=false`，无人/故障不显示 Normal
+- `/fall-detection` 真实 Worker/GPU/模型/状态/性能页面
+- Dashboard 仅更新真实跌倒检测；跌倒风险和诈骗风险仍保持未接入
+
+实现、安全、依赖许可证与安全测试原则见 [docs/m5-fall-detection.md](docs/m5-fall-detection.md)。
+
 ## 尚未实现
 
-RTMP/HTTP-FLV、PTZ、截图、云录像、历史回放、双向语音、设备事件、PyAV、ASR、姿态估计、AI 模型、跌倒检测、跌倒风险评估、诈骗识别、用户系统、业务数据库表、告警业务和 Nginx 访问链路均未实现。M4 的 pipeline test 只是明确标记的传输诊断，不是 AI 输出。
+RTMP/HTTP-FLV、PTZ、截图、云录像、历史回放、双向语音、设备事件、ASR、跌倒风险评估、诈骗识别、正式事件/告警、用户系统、业务数据库表和 Nginx 访问链路均未实现。M5 跌倒检测只是工程 baseline，未经过临床验证；M4 pipeline test 仍只是明确标记的传输诊断。

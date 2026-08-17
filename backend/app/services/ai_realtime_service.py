@@ -43,12 +43,16 @@ class AiRealtimeService:
             latest = await self._store.get_latest_result(
                 AlgorithmTask.PIPELINE_TEST.value
             )
+            latest_fall_detection = await self._store.get_latest_result(
+                AlgorithmTask.FALL_DETECTION.value
+            )
         except Exception:
             return {
                 "redis_reachable": False,
                 "workers": [],
                 "capabilities": AlgorithmCapabilities(),
                 "latest_pipeline_test": None,
+                "latest_fall_detection": None,
             }
 
         capabilities = workers[0].capabilities if workers else AlgorithmCapabilities()
@@ -57,6 +61,7 @@ class AiRealtimeService:
             "workers": workers,
             "capabilities": capabilities,
             "latest_pipeline_test": latest,
+            "latest_fall_detection": latest_fall_detection,
         }
 
     async def initial_messages(self) -> list[RealtimeEnvelope]:

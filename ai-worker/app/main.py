@@ -5,13 +5,17 @@ from fastapi import FastAPI, HTTPException
 from careshield_contracts import AlgorithmCapabilities, AlgorithmResult
 
 from app.core.config import load_worker_settings
+from app.media.backend_client import BackendMediaClient
 from app.publisher.result_publisher import PublishError, ResultPublisher
+from app.services.fall_detection_service import FallDetectionService
 from app.services.pipeline_test_service import PipelineTestService
 from app.services.worker_runtime import WorkerRuntime
 
 settings = load_worker_settings()
 publisher = ResultPublisher(settings)
-runtime = WorkerRuntime(settings, publisher)
+media_client = BackendMediaClient(settings)
+fall_detection_service = FallDetectionService(settings, publisher, media_client)
+runtime = WorkerRuntime(settings, publisher, fall_detection_service)
 pipeline_test_service = PipelineTestService(publisher)
 
 

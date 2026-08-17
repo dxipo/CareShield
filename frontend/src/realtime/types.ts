@@ -4,7 +4,13 @@ export type AlgorithmTask =
   | 'fall_risk'
   | 'fraud_detection'
   | 'pipeline_test'
-export type CapabilityState = 'not_installed'
+export type CapabilityState =
+  | 'not_installed'
+  | 'installed'
+  | 'starting'
+  | 'running'
+  | 'unavailable'
+  | 'error'
 
 export interface AlgorithmCapabilities {
   fall_detection: CapabilityState
@@ -34,6 +40,7 @@ export interface WorkerStatus {
   timestamp: string
   version: string
   capabilities: AlgorithmCapabilities
+  runtime: Record<string, unknown>
 }
 
 export interface AlgorithmResultEnvelope {
@@ -77,10 +84,18 @@ function isAlgorithmResult(value: unknown): value is AlgorithmResult {
 
 function isCapabilities(value: unknown): value is AlgorithmCapabilities {
   if (!isRecord(value)) return false
+  const states: CapabilityState[] = [
+    'not_installed',
+    'installed',
+    'starting',
+    'running',
+    'unavailable',
+    'error',
+  ]
   return (
-    value.fall_detection === 'not_installed' &&
-    value.fall_risk === 'not_installed' &&
-    value.fraud_detection === 'not_installed'
+    states.includes(value.fall_detection as CapabilityState) &&
+    states.includes(value.fall_risk as CapabilityState) &&
+    states.includes(value.fraud_detection as CapabilityState)
   )
 }
 
@@ -91,7 +106,8 @@ function isWorkerStatus(value: unknown): value is WorkerStatus {
     typeof value.online === 'boolean' &&
     typeof value.timestamp === 'string' &&
     typeof value.version === 'string' &&
-    isCapabilities(value.capabilities)
+    isCapabilities(value.capabilities) &&
+    isRecord(value.runtime)
   )
 }
 

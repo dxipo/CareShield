@@ -20,11 +20,11 @@ def test_health() -> None:
     assert response.json() == {"status": "ok", "service": "ai-worker"}
 
 
-def test_capabilities_truthfully_report_no_models() -> None:
+def test_capabilities_truthfully_report_fall_detector_starting_only() -> None:
     response = get("/capabilities")
     assert response.status_code == 200
     assert response.json() == {
-        "fall_detection": "not_installed",
+        "fall_detection": "starting",
         "fall_risk": "not_installed",
         "fraud_detection": "not_installed",
     }

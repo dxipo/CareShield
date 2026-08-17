@@ -81,3 +81,30 @@ def test_redis_store_uses_worker_ttl_and_latest_result_ttl() -> None:
         assert restored is not None and restored.result_id == result.result_id
 
     asyncio.run(run())
+
+
+def test_device_result_is_saved_under_device_and_global_latest_keys() -> None:
+    async def run() -> None:
+        store = RealtimeStore(settings())
+        fake = FakeRedis()
+        store._redis = fake
+        result = AlgorithmResult(
+            result_id=uuid4(),
+            task=AlgorithmTask.FALL_DETECTION,
+            model_id="pose-fall-baseline",
+            model_version="m5-v1",
+            device_id="ezviz_safe_id",
+            result_timestamp=datetime.now(timezone.utc),
+            label="normal",
+            score=0.1,
+            simulated=False,
+        )
+
+        await store.save_latest_result(result)
+
+        fall_keys = [key for key in fake.values if key.startswith("ai:latest:fall_detection")]
+        assert len(fall_keys) == 2
+        restored = await store.get_latest_result("fall_detection")
+        assert restored is not None and restored.result_id == result.result_id
+
+    asyncio.run(run())

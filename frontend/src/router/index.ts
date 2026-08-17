@@ -5,6 +5,7 @@ import AppLayout from '../layout/AppLayout.vue'
 const DashboardView = () => import('../views/DashboardView.vue')
 const AlgorithmsView = () => import('../views/AlgorithmsView.vue')
 const DevicesView = () => import('../views/DevicesView.vue')
+const FallDetectionView = () => import('../views/FallDetectionView.vue')
 const ModulePlaceholderView = () => import('../views/ModulePlaceholderView.vue')
 const MonitorView = () => import('../views/MonitorView.vue')
 const SystemView = () => import('../views/SystemView.vue')
@@ -57,14 +58,7 @@ const router = createRouter({
         {
           path: 'fall-detection',
           name: 'fall-detection',
-          component: ModulePlaceholderView,
-          props: {
-            title: '跌倒检测',
-            description: '用于未来呈现实时跌倒检测状态与告警。',
-            emptyTitle: '跌倒检测模型尚未接入',
-            emptyDescription: '当前阶段不执行视频分析或跌倒识别。',
-            iconName: 'warning',
-          },
+          component: FallDetectionView,
           meta: {
             title: '跌倒检测',
             subtitle: '实时跌倒检测模块',

@@ -7,7 +7,7 @@ withDefaults(
     value: string
     description: string
     icon: Component
-    tone?: 'neutral' | 'success'
+    tone?: 'neutral' | 'success' | 'warning' | 'danger'
   }>(),
   {
     tone: 'neutral',
@@ -58,6 +58,16 @@ withDefaults(
 .status-card--success .status-card__icon {
   color: var(--color-primary);
   background: var(--color-primary-soft);
+}
+
+.status-card--warning .status-card__icon {
+  color: #a5661e;
+  background: #fff3df;
+}
+
+.status-card--danger .status-card__icon {
+  color: var(--color-danger);
+  background: #faeae8;
 }
 
 .status-card__label {

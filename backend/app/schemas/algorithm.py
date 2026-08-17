@@ -24,6 +24,7 @@ class AlgorithmsStatusResponse(BaseModel):
     workers: list[WorkerHeartbeat]
     capabilities: AlgorithmCapabilities
     latest_pipeline_test: AlgorithmResult | None
+    latest_fall_detection: AlgorithmResult | None
 
 
 class SystemStatusResponse(BaseModel):

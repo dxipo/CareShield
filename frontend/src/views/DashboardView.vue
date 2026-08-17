@@ -9,16 +9,59 @@ import {
   VideoCamera,
   Warning,
 } from '@element-plus/icons-vue'
-import { onMounted, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 
+import { fetchAlgorithmsStatus } from '../api/algorithms'
 import { ApiRequestError, fetchDevices } from '../api/devices'
 import BackendStatusPanel from '../components/BackendStatusPanel.vue'
 import EmptyState from '../components/EmptyState.vue'
 import PageHeader from '../components/PageHeader.vue'
 import StatusCard from '../components/StatusCard.vue'
+import { latestFallDetection } from '../realtime'
+import type { AlgorithmResult } from '../realtime/types'
 
 const onlineDeviceValue = ref('--')
 const onlineDeviceDescription = ref('正在获取设备')
+const initialFallDetection = ref<AlgorithmResult | null>(null)
+const now = ref(Date.now())
+let refreshTimer: ReturnType<typeof setInterval> | null = null
+let clockTimer: ReturnType<typeof setInterval> | null = null
+
+const fallResult = computed(() => latestFallDetection.value ?? initialFallDetection.value)
+const fallResultFresh = computed(() => {
+  const result = fallResult.value
+  return Boolean(
+    result &&
+      result.task === 'fall_detection' &&
+      result.simulated === false &&
+      now.value - Date.parse(result.result_timestamp) < 15_000,
+  )
+})
+const fallDetectionValue = computed(() => {
+  if (!fallResultFresh.value || !fallResult.value) return '--'
+  return {
+    normal: '正常',
+    suspected_fall: '疑似跌倒',
+    fallen: '检测到跌倒',
+    recovering: '恢复中',
+    no_person: '--',
+    low_pose_confidence: '--',
+  }[fallResult.value.label] ?? '--'
+})
+const fallDetectionDescription = computed(() => {
+  if (!fallResultFresh.value || !fallResult.value) return '检测服务不可用'
+  if (fallResult.value.label === 'no_person') return '未检测到人员'
+  if (fallResult.value.label === 'low_pose_confidence') return '姿态置信度不足'
+  return '真实实时检测'
+})
+const fallDetectionTone = computed<'neutral' | 'success' | 'warning' | 'danger'>(() => {
+  if (!fallResultFresh.value || !fallResult.value) return 'neutral'
+  if (fallResult.value.label === 'fallen') return 'danger'
+  if (fallResult.value.label === 'suspected_fall' || fallResult.value.label === 'recovering') {
+    return 'warning'
+  }
+  return fallResult.value.label === 'normal' ? 'success' : 'neutral'
+})
 
 async function loadOnlineDevices() {
   try {
@@ -32,7 +75,29 @@ async function loadOnlineDevices() {
   }
 }
 
-onMounted(loadOnlineDevices)
+async function loadFallDetection() {
+  try {
+    const snapshot = await fetchAlgorithmsStatus()
+    const result = snapshot.latest_fall_detection
+    if (result?.task === 'fall_detection' && result.simulated === false) {
+      initialFallDetection.value = result
+    }
+  } catch {
+    initialFallDetection.value = null
+  }
+}
+
+onMounted(() => {
+  void loadOnlineDevices()
+  void loadFallDetection()
+  refreshTimer = setInterval(loadFallDetection, 10_000)
+  clockTimer = setInterval(() => (now.value = Date.now()), 1_000)
+})
+
+onBeforeUnmount(() => {
+  if (refreshTimer) clearInterval(refreshTimer)
+  if (clockTimer) clearInterval(clockTimer)
+})
 </script>
 
 <template>
@@ -51,7 +116,13 @@ onMounted(loadOnlineDevices)
         :icon="CircleCheck"
       />
       <StatusCard title="跌倒风险" value="--" description="模型未接入" :icon="TrendCharts" />
-      <StatusCard title="跌倒检测" value="--" description="暂无数据" :icon="Warning" />
+      <StatusCard
+        title="跌倒检测"
+        :value="fallDetectionValue"
+        :description="fallDetectionDescription"
+        :icon="Warning"
+        :tone="fallDetectionTone"
+      />
       <StatusCard title="诈骗风险" value="--" description="模型未接入" :icon="Lock" />
       <StatusCard
         title="在线设备"

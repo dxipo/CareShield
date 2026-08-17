@@ -54,3 +54,20 @@ def test_algorithm_result_requires_simulated_flag() -> None:
 def test_pipeline_test_cannot_claim_to_be_real() -> None:
     with pytest.raises(ValidationError):
         AlgorithmResult.model_validate(valid_result(simulated=False))
+
+
+def test_real_fall_detection_result_is_explicitly_non_simulated() -> None:
+    result = AlgorithmResult.model_validate(
+        valid_result(
+            task=AlgorithmTask.FALL_DETECTION,
+            model_id="pose-fall-baseline",
+            model_version="m5-v1",
+            label="normal",
+            score=0.05,
+            level="normal",
+            metadata={"score_type": "heuristic"},
+            simulated=False,
+        )
+    )
+    assert result.simulated is False
+    assert result.metadata["score_type"] == "heuristic"

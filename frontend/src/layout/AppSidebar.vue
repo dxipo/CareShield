@@ -52,8 +52,8 @@ const navigation = [
     <div class="app-sidebar__footer">
       <span class="app-sidebar__footer-dot" aria-hidden="true"></span>
       <div>
-        <strong>M4 Realtime Pipeline</strong>
-        <span>AI 结果实时基础设施</span>
+        <strong>M5 Fall Detection</strong>
+        <span>真实姿态与时序跌倒检测</span>
       </div>
     </div>
   </aside>

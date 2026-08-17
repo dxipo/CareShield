@@ -6,22 +6,42 @@ from careshield_contracts import AlgorithmCapabilities, WorkerHeartbeat
 
 from app.core.config import WorkerSettings
 from app.publisher.result_publisher import PublishError, ResultPublisher
+from app.services.fall_detection_service import FallDetectionService
 
 logger = logging.getLogger(__name__)
 
 
 class WorkerRuntime:
-    def __init__(self, settings: WorkerSettings, publisher: ResultPublisher) -> None:
+    def __init__(
+        self,
+        settings: WorkerSettings,
+        publisher: ResultPublisher,
+        fall_service: FallDetectionService | None = None,
+    ) -> None:
         self.settings = settings
         self.publisher = publisher
-        self.capabilities = AlgorithmCapabilities()
+        self.fall_service = fall_service
         self._heartbeat_task: asyncio.Task | None = None
 
+    @property
+    def capabilities(self) -> AlgorithmCapabilities:
+        return AlgorithmCapabilities(
+            fall_detection=(
+                self.fall_service.capability
+                if self.fall_service is not None
+                else "not_installed"
+            ),
+        )
+
     async def start(self) -> None:
+        if self.fall_service is not None:
+            await self.fall_service.start()
         if self._heartbeat_task is None:
             self._heartbeat_task = asyncio.create_task(self._heartbeat_loop())
 
     async def stop(self) -> None:
+        if self.fall_service is not None:
+            await self.fall_service.stop()
         if self._heartbeat_task is not None:
             self._heartbeat_task.cancel()
             try:
@@ -38,6 +58,11 @@ class WorkerRuntime:
             timestamp=datetime.now(timezone.utc),
             version=self.settings.worker_version,
             capabilities=self.capabilities,
+            runtime=(
+                self.fall_service.runtime_metadata()
+                if self.fall_service is not None
+                else {}
+            ),
         )
 
     async def send_heartbeat(self) -> None:
