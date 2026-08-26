@@ -34,12 +34,22 @@ class FakeStreamClient:
 
 
 class FakeDeviceService:
-    settings = EzvizSettings("example-key", "example-secret")
-    client = None
-
-    def __init__(self, *, online: bool = True, missing: bool = False) -> None:
+    def __init__(
+        self,
+        *,
+        online: bool = True,
+        missing: bool = False,
+        browser_enabled: bool = False,
+        client: object | None = None,
+    ) -> None:
         self.online = online
         self.missing = missing
+        self.settings = EzvizSettings(
+            "example-key",
+            "example-secret",
+            browser_playback_enabled=browser_enabled,
+        )
+        self.client = client
 
     async def get_device(self, device_serial: str) -> DeviceDetail:
         if self.missing:
@@ -178,3 +188,40 @@ def test_ezviz_stream_api_error_is_safely_mapped() -> None:
 
     assert error.value.code == "60019"
     assert secret not in str(error.value)
+
+
+class FakeTokenManager:
+    async def get_access_token(self) -> str:
+        return "runtime-token"
+
+
+class FakeBrowserClient:
+    token_manager = FakeTokenManager()
+
+
+def test_ezopen_browser_session_mapping() -> None:
+    service = StreamService(
+        FakeDeviceService(
+            browser_enabled=True,
+            client=FakeBrowserClient(),
+        )  # type: ignore[arg-type]
+    )
+
+    session = asyncio.run(
+        service.get_browser_playback_session("TEST SERIAL", channel_no=2)
+    )
+
+    assert session.protocol == "ezopen"
+    assert session.playback_url == "ezopen://open.ys7.com/TEST%20SERIAL/2.live"
+    assert session.access_token == "runtime-token"
+    assert session.decoder == "v3"
+    assert session.quality == "performance"
+
+
+def test_ezopen_browser_session_requires_explicit_enablement() -> None:
+    from app.adapters.ezviz.exceptions import EzvizBrowserPlaybackDisabledError
+
+    service = StreamService(FakeDeviceService())  # type: ignore[arg-type]
+
+    with pytest.raises(EzvizBrowserPlaybackDisabledError):
+        asyncio.run(service.get_browser_playback_session("TEST123456"))

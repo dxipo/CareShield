@@ -2,7 +2,7 @@
 
 ## 项目用途
 
-本项目是“颐安盾——多模态居家老人智能风险防控平台”（Elderly AI Safety Platform），服务于老年人跌倒风险评估、实时跌倒检测和诈骗风险识别研究。M0–M4 已完成基础工程、Web 平台、真实 EZVIZ 媒体链和统一实时结果管道；当前 M5 只实现真实 GPU 姿态与时序跌倒检测基线，不实现跌倒风险、诈骗识别或告警业务。
+本项目是“颐安盾——多模态居家老人智能风险防控平台”（Elderly AI Safety Platform），服务于老年人跌倒风险评估、实时跌倒检测和诈骗风险识别研究。M0–M5 已完成基础工程、Web 平台、真实 EZVIZ 媒体链、统一实时结果管道和真实 GPU 跌倒检测基线；M5.1 使用 EZOPEN 降低浏览器预览延迟，不实现新的 AI 业务。
 
 ## 固定技术栈
 
@@ -10,7 +10,7 @@
 - Backend：Python、FastAPI、Uvicorn。
 - AI Worker：独立 Python 服务；M5 使用 PyTorch、Ultralytics、PyAV 和 NVIDIA GPU，模型与媒体解码不得进入 Backend。
 - Infrastructure：PostgreSQL、Redis、Docker Compose；需要时再引入 Nginx。
-- Video：M3 使用 EZVIZ 官方 HLS Player 与 ffprobe；后续 AI Worker 可使用 FFmpeg、PyAV。
+- Video：浏览器使用 EZVIZ 官方 EZOPEN Web Player；Backend/AI Worker 使用临时 HLS、FFmpeg 与 PyAV。
 
 未经项目负责人确认，不得随意替换或增加同类技术栈。
 
@@ -42,3 +42,4 @@
 12. Browser 播放、Backend 媒体探测和后续 AI Worker 通过 Stream 契约解耦；不得把媒体请求逻辑直接写进 API route。
 13. 跌倒检测不可用、无人或低置信度时不得自动显示“正常”；测试姿态必须明确为 synthetic fixture。
 14. M5 score 是 heuristic evidence，不得宣传为临床验证概率；禁止要求老人进行危险跌倒测试。
+15. EZOPEN AccessToken 只允许通过显式启用、`no-store` 的专用浏览器会话提供给官方播放器，不得存入源码、日志、数据库、localStorage 或测试 fixture。

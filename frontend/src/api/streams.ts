@@ -12,6 +12,16 @@ export interface StreamPlayback {
   muted: boolean
 }
 
+export interface BrowserPlaybackSession {
+  device_id: string
+  channel_no: number
+  protocol: 'ezopen'
+  playback_url: string
+  access_token: string
+  decoder: 'v3'
+  quality: 'performance'
+}
+
 export interface VideoMediaInfo {
   codec_name: string | null
   codec_long_name: string | null
@@ -53,6 +63,19 @@ export function fetchLiveStream(
   return requestJson(
     `/api/devices/${encodeURIComponent(deviceSerial)}/stream?${query.toString()}`,
     signal,
+  )
+}
+
+export function fetchBrowserPlaybackSession(
+  deviceSerial: string,
+  channelNo: number,
+  signal?: AbortSignal,
+): Promise<BrowserPlaybackSession> {
+  const query = new URLSearchParams({ channel_no: String(channelNo) })
+  return requestJson(
+    `/api/devices/${encodeURIComponent(deviceSerial)}/browser-playback?${query.toString()}`,
+    signal,
+    { cache: 'no-store' },
   )
 }
 

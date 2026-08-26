@@ -16,6 +16,7 @@ venv/
 node_modules/
 frontend/dist/
 frontend/public/ezuikit-hls/
+frontend/public/ezuikit_static/
 *.local
 
 # Editors and operating systems

@@ -15,6 +15,22 @@ class StreamPlayback(BaseModel):
     muted: bool = False
 
 
+class BrowserPlaybackSession(BaseModel):
+    """Ephemeral credentials required by the official EZOPEN Web SDK.
+
+    This response must never be cached, persisted, logged, or reused as a
+    general-purpose CareShield API response.
+    """
+
+    device_id: str
+    channel_no: int
+    protocol: Literal["ezopen"] = "ezopen"
+    playback_url: str
+    access_token: str
+    decoder: Literal["v3"] = "v3"
+    quality: Literal["performance"] = "performance"
+
+
 class VideoMediaInfo(BaseModel):
     codec_name: str | None = None
     codec_long_name: str | None = None

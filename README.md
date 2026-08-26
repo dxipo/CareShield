@@ -4,16 +4,17 @@
 
 本项目面向“揭榜挂帅——基于多模态 AI 监测的老年人跌倒风险、心理健康、诈骗识别及预警研究”，计划支持跌倒风险评估、实时跌倒检测和诈骗风险识别。目标摄像设备为 EZVIZ CS-H6c (8WFL, 4mm)。
 
-## 当前阶段：M5 Real Fall Detection Baseline
+## 当前阶段：M5.1 EZOPEN Low-latency Web Playback
 
-M0–M4 已完成基础工程、Dashboard、真实萤石 H.265 音视频和统一实时结果链。M5 在独立 AI Worker 中首次接入 RTX 4090、H.265 解码、官方预训练人体姿态模型和时序跌倒检测基线，并沿用 M4 `AlgorithmResult -> Redis -> WebSocket -> Vue` 架构。
+M0–M5 已完成基础工程、Dashboard、真实萤石音视频、统一实时结果链和 GPU 跌倒检测基线。M5.1 将浏览器预览从高延迟标准 HLS 切换为萤石官方 EZOPEN；AI Worker 继续通过 Backend 临时 HLS 地址解码同一 H6c，因为 FFmpeg/PyAV 不能直接消费私有 EZOPEN 协议。
 
 当前能力状态：
 
 | 能力 | 状态 |
 | --- | --- |
 | EZVIZ device query | Implemented in M2 |
-| EZVIZ H.265 HLS live streaming | Implemented in M3.1; manual visual verification gate |
+| Browser live streaming | M5.1 EZOPEN low-latency preview |
+| AI media input | H.265 HLS through authenticated Backend endpoint |
 | Media diagnostics | Implemented in M3.1; probe and content verification are separate |
 | AI realtime infrastructure | Implemented in M4; pipeline test is explicitly simulated |
 | AI models | YOLO26n-pose installed in M5 Worker only |
@@ -23,14 +24,14 @@ M0–M4 已完成基础工程、Dashboard、真实萤石 H.265 音视频和统�
 
 ## 技术架构
 
-- Frontend：Vue 3 + TypeScript + Vite + Vue Router + Element Plus + EZUIKit HLS Player
+- Frontend：Vue 3 + TypeScript + Vite + Vue Router + Element Plus + EZUIKit EZOPEN Player
 - Backend：Python + FastAPI + Uvicorn + HTTPX + Redis client + ffprobe
 - Data services：PostgreSQL + Redis（M4 用于 Worker TTL 和 latest result）
 - AI Worker：独立 FastAPI + PyTorch/CUDA + Ultralytics + PyAV 服务
 - Deployment：Docker Compose
 - Reverse proxy：Nginx 目录已预留，M0 不加入访问链路
 
-浏览器请求相对地址 `/api/*`。开发环境和 Compose 环境均由 Vite 将请求代理到 FastAPI，因此前端不接触 AppSecret 或 AccessToken，也不依赖写死的后端主机地址。
+浏览器请求相对地址 `/api/*`，开发与 Compose 环境均由 Vite 代理到 FastAPI。AppSecret 始终只在 Backend；萤石官方 EZOPEN Web SDK 必须在浏览器运行时接收 AccessToken，因此仅专用播放会话接口返回当前内存 Token，并设置 `no-store`。Token 不进入源码、日志、数据库或浏览器持久化存储。
 
 M4 实时结果链：
 
@@ -45,12 +46,13 @@ H6c -> Backend authenticated temporary stream -> AI Worker H.265 decode
      -> frame sampling -> pose -> temporal detector -> M4 realtime result chain
 ```
 
-M2/M3 设备与媒体调用链：
+设备与双媒体链：
 
 ```text
 Frontend -> CareShield API Route -> Device Service -> EZVIZ Adapter -> EZVIZ Open API
-Frontend -> CareShield Stream API -> Stream Service -> EZVIZ Stream Adapter -> temporary HLS
-Backend ffprobe -----------------------------> temporary HLS -> safe media metadata
+Browser -> no-store playback session -> EZOPEN -> official EZUIKit player
+AI Worker -> authenticated internal API -> temporary HLS -> PyAV/FFmpeg
+Backend ffprobe ---------------------------> temporary HLS -> safe media metadata
 ```
 
 ## 目录结构
@@ -116,9 +118,11 @@ PYTHONPATH=shared/python uvicorn app.main:app --app-dir ai-worker --reload --por
 EZVIZ_APP_KEY=your_app_key
 EZVIZ_APP_SECRET=your_app_secret
 EZVIZ_API_BASE_URL=https://open.ys7.com
+EZVIZ_BROWSER_PLAYBACK_ENABLED=false
+EZVIZ_EZOPEN_DOMAIN=open.ys7.com
 ```
 
-真实 AppKey、AppSecret 和 AccessToken 不得写入前端、文档或 Git。未配置时 Backend 仍可启动，`GET /api/health` 保持正常，EZVIZ 状态显示为未配置。修改配置后需重启 Backend。
+真实 AppKey、AppSecret 和 AccessToken 不得写入前端源码、文档或 Git。可信本地部署需要在被忽略的 `.env` 中显式设置 `EZVIZ_BROWSER_PLAYBACK_ENABLED=true` 才能启用 EZOPEN Web 会话；未启用时其他 Backend 功能仍正常。修改配置后需重启 Backend。
 
 M2 API：
 
@@ -130,6 +134,7 @@ M3 API：
 
 - `GET /api/devices/{device_serial}/stream`：运行时获取一小时有效的 HLS 预览地址。
 - `GET /api/devices/{device_serial}/media-info`：实时探测并仅返回安全的音视频元数据。
+- `GET /api/devices/{device_serial}/browser-playback`：M5.1 专用、禁止缓存的 EZOPEN 浏览器会话；仅官方播放器运行时使用。
 
 M4 API：
 
@@ -146,7 +151,7 @@ M5 内部媒体 API（仅 AI Worker Bearer 鉴权）：
 
 播放地址属于临时敏感资源，仅由 Backend 运行时获取并交给播放器，不写入 `.env`、数据库、日志、测试 fixture 或文档。媒体诊断 API 不返回播放地址。
 
-API 不向浏览器返回 AppSecret 或 AccessToken。普通设备页面会对设备序列号脱敏显示。
+除专用 EZOPEN 浏览器播放会话外，API 不向浏览器返回 AccessToken；任何 API 都不返回 AppSecret。普通设备页面会对设备序列号脱敏显示。
 
 ## Docker 启动
 
@@ -235,12 +240,21 @@ python3 scripts/probe_ezviz_stream.py
 
 - 通过官方 `POST /api/lapp/v2/live/address/get` 显式请求 H.265、TS、非静音的标准 HLS 实时预览地址
 - Stream Route、Service、EZVIZ Stream Adapter 分层，API 不直接访问第三方 HTTP
-- `/monitor` 使用官方 `@ezuikit/player-hls` WASM 软解；只有人工确认画面内容后才显示 `LIVE`
+- M3.1 曾使用官方 `@ezuikit/player-hls` WASM 软解与人工画面确认；该浏览器路径已在 M5.1 被 EZOPEN 替代
 - Backend 镜像内安装 ffprobe，`media-info` 返回安全媒体元数据，并明确 `probe_success` 不等于真实摄像画面已验证
 - 本机诊断脚本不硬编码、不打印、不保存设备序列号、Token、Secret 或播放地址
 - Stream 和媒体映射使用 Mock/Fake 的单元测试，不依赖真实 H6c 或网络
 
 更多协议选择、安全边界与调试方式见 [docs/ezviz-streaming.md](docs/ezviz-streaming.md)。
+
+## M5.1 当前已完成内容
+
+- `/monitor` 使用官方 `ezuikit-js` 的 EZOPEN 播放器，浏览器不再通过标准 HLS 预览。
+- 首帧事件直接驱动 `LIVE` 并记录本次连接首帧耗时，移除遮挡控制区的人工确认按钮。
+- EZOPEN 会话显式启用、响应禁止缓存，播放 URL 与 Token 不持久化、不写日志。
+- HLS 仍只服务于 Backend ffprobe 和 AI Worker，M5 跌倒检测输入链保持不变。
+- `ezuikit-js` 9.0.19 用于官方 EZOPEN Web 播放，许可证为 ISC；其解码静态资源在构建时从 npm 安装目录复制，不提交 Git。
+- 当前实测 AI HLS 追到流尾后约有 6.2 秒媒体延迟；约 4 ms 的模型推理耗时不代表完整端到端延迟，后续实时告警阶段仍需优化媒体输入。
 
 ## M4 当前已完成内容
 

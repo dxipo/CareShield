@@ -1,77 +1,57 @@
 <script setup lang="ts">
-import HLSPlayer from '@ezuikit/player-hls'
+import { EZUIKitPlayer, type EZUIKitError } from 'ezuikit-js'
 import { Refresh, VideoCamera } from '@element-plus/icons-vue'
 import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
 
 import { fetchDevices, type DeviceSummary } from '../api/devices'
-import { fetchLiveStream, fetchMediaInfo, type MediaInfo } from '../api/streams'
+import {
+  fetchBrowserPlaybackSession,
+  fetchMediaInfo,
+  type BrowserPlaybackSession,
+  type MediaInfo,
+} from '../api/streams'
 import PageHeader from '../components/PageHeader.vue'
 
-type MonitorState =
-  | 'loading'
-  | 'connecting'
-  | 'media-ready'
-  | 'live'
-  | 'offline'
-  | 'unavailable'
-  | 'encoding-error'
-  | 'error'
+type MonitorState = 'loading' | 'connecting' | 'live' | 'offline' | 'unavailable' | 'error'
 
 const state = ref<MonitorState>('loading')
 const selectedDevice = ref<DeviceSummary | null>(null)
 const protocol = ref<string | null>(null)
-const containerFormat = ref<string | null>(null)
-const requestedCodec = ref<string | null>(null)
 const activeDecoder = ref<string | null>(null)
-const playerPrepared = ref(false)
+const firstFrameLatencyMs = ref<number | null>(null)
+const playbackError = ref<string | null>(null)
 const diagnostics = ref<MediaInfo | null>(null)
 const diagnosticsLoading = ref(false)
 const playerContainer = ref<HTMLElement | null>(null)
-let player: HLSPlayer | null = null
+const playerContainerId = 'careshield-ezopen-player'
+let player: EZUIKitPlayer | null = null
 let requestController: AbortController | null = null
 let resizeObserver: ResizeObserver | null = null
-let replayTimer: number | null = null
-let progressWatchdog: number | null = null
-let startPreparedStream: (() => void) | null = null
-let recoveryInProgress = false
+let playerGeneration = 0
 
 const stateLabel = computed(() => {
   const labels: Record<MonitorState, string> = {
     loading: 'Loading',
     connecting: 'Connecting',
-    'media-ready': 'Verification required',
     live: 'LIVE',
     offline: 'Offline',
     unavailable: 'Unavailable',
-    'encoding-error': 'Encoding incompatible',
-    error: 'Playback error',
+    error: 'Stream Error',
   }
   return labels[state.value]
 })
 
 const stateTagType = computed(() => {
   if (state.value === 'live') return 'success'
-  if (state.value === 'media-ready') return 'warning'
-  if (
-    state.value === 'offline' ||
-    state.value === 'encoding-error' ||
-    state.value === 'error'
-  ) return 'danger'
+  if (state.value === 'offline' || state.value === 'error') return 'danger'
   return 'info'
 })
 
-const showBlockingPlaceholder = computed(() =>
-  !['media-ready', 'live'].includes(state.value),
-)
-
 const placeholderMessage = computed(() => {
   if (state.value === 'loading') return '正在获取设备...'
-  if (state.value === 'connecting') {
-    return playerPrepared.value ? '播放器已准备，请点击开始实时播放' : '正在连接摄像头...'
-  }
+  if (state.value === 'connecting') return '正在通过 EZOPEN 连接摄像头...'
   if (state.value === 'offline') return '摄像头当前离线'
-  if (state.value === 'encoding-error') return '视频编码或浏览器解码不兼容'
-  if (state.value === 'error') return '浏览器播放失败，请尝试重新连接'
+  if (state.value === 'error') return '实时流连接失败，请尝试重新连接'
   return '暂时无法获取实时视频'
 })
 
@@ -79,8 +59,7 @@ const deviceDisplayName = computed(() => {
   const device = selectedDevice.value
   if (!device) return 'EZVIZ Camera'
   if (device.name && device.device_serial && device.name.includes(device.device_serial)) {
-    const suffix = device.device_serial.slice(-4)
-    return device.name.replace(device.device_serial, `••••${suffix}`)
+    return device.name.replace(device.device_serial, `••••${device.device_serial.slice(-4)}`)
   }
   return device.name || device.model || 'EZVIZ Camera'
 })
@@ -98,158 +77,72 @@ function pickDevice(devices: DeviceSummary[]): DeviceSummary | null {
 }
 
 function destroyPlayer(): void {
-  if (replayTimer !== null) {
-    window.clearTimeout(replayTimer)
-    replayTimer = null
-  }
-  if (progressWatchdog !== null) {
-    window.clearInterval(progressWatchdog)
-    progressWatchdog = null
-  }
-  startPreparedStream = null
-  playerPrepared.value = false
+  playerGeneration += 1
   resizeObserver?.disconnect()
   resizeObserver = null
   if (player) {
-    player.destroy()
+    const stalePlayer = player
     player = null
+    void stalePlayer.stop().catch(() => undefined)
+    stalePlayer.destroy()
   }
-  if (playerContainer.value) {
-    playerContainer.value.replaceChildren()
-  }
+  playerContainer.value?.replaceChildren()
 }
 
 async function initializePlayer(
-  playbackUrl: string,
-  recoverStalledStream: () => void,
+  session: BrowserPlaybackSession,
+  connectionStartedAt: number,
 ): Promise<void> {
   await nextTick()
   const container = playerContainer.value
   if (!container) throw new Error('Player container is unavailable')
 
   destroyPlayer()
+  const generation = playerGeneration
   const width = Math.max(container.clientWidth, 640)
   const height = Math.max(container.clientHeight, 360)
-  const currentPlayer = new HLSPlayer({
-    container,
-    url: playbackUrl,
-    type: 'hls',
+  const currentPlayer = new EZUIKitPlayer({
+    id: playerContainerId,
+    accessToken: session.access_token,
+    url: session.playback_url,
     width,
     height,
-    scaleMode: 0,
-    autoPlay: false,
-    isLive: true,
-    // EZVIZ H.265 live streams require the official client capability marker.
-    isEzviz: true,
-    // H.265 TS is decoded by the official WASM/WebGL software path rather
-    // than relying on browser-native HEVC support.
-    decoderType: 'soft',
-    staticPath: '/ezuikit-hls/',
-    // Keep autoplay reliable. The server still returns audio (mute=0), and
-    // the player volume control can be used to enable sound after interaction.
-    // The SDK 2.0.0 theme declaration incorrectly narrows this option to the
-    // literal false although the runtime and official README accept boolean.
-    muted: true as never,
-    disableCollect: true,
+    template: 'pcLive',
+    audio: true,
+    autoPlay: true,
+    decoderType: 'v3',
+    staticPath: '/ezuikit_static',
+    quality: 'pp',
     language: 'zh',
-    loggerOptions: { name: 'CareShield HLS', level: 'WARN', showTime: false },
-    // The SDK runtime documents null as the way to disable controls, while
-    // its 2.0.0 declaration file accidentally omits null from these fields.
-    ptzOptions: null as never,
-    talkOptions: null as never,
-    capturePictureOptions: null as never,
-    recordOptions: null as never,
+    disableRenderPrivateData: true,
+    streamInfoCBType: 1,
+    loggerOptions: { name: 'CareShield EZOPEN', level: 'WARN', showTime: false },
+    handleError: (error: EZUIKitError) => {
+      if (playerGeneration !== generation) return
+      state.value = 'error'
+      const errorType = error.type || 'unknown'
+      const errorCode = error.data?.nErrorCode
+      playbackError.value = `EZOPEN 播放异常：${errorType}${errorCode === undefined ? '' : ` (${errorCode})`}`
+    },
   })
 
-  const markMediaReady = () => {
-    lastProgressAt = Date.now()
-    if (state.value === 'connecting') state.value = 'media-ready'
-  }
-  const markError = (encoding = false) => {
-    if (state.value !== 'loading') state.value = 'error'
-    if (encoding) state.value = 'encoding-error'
-  }
   player = currentPlayer
-  currentPlayer.on(HLSPlayer.HLSEVENTS.INIT_SUCCESS, (detail: unknown) => {
-    const decoder = (detail as { decoderType?: unknown } | null)?.decoderType
-    activeDecoder.value = typeof decoder === 'string' ? decoder : 'soft'
+  activeDecoder.value = session.decoder
+  currentPlayer.eventEmitter.on(EZUIKitPlayer.EVENTS.firstFrameDisplay, () => {
+    if (playerGeneration !== generation) return
+    firstFrameLatencyMs.value = Math.round(performance.now() - connectionStartedAt)
+    playbackError.value = null
+    state.value = 'live'
   })
-  currentPlayer.on(HLSPlayer.HLSEVENTS.firstFrameDisplay, markMediaReady)
-  currentPlayer.on(HLSPlayer.HLSEVENTS.TIME_UPDATE, markMediaReady)
-  currentPlayer.on(HLSPlayer.HLSEVENTS.ERROR, () => markError(false))
-  currentPlayer.on(HLSPlayer.HLSEVENTS.NETWORK_ERROR, () => markError(false))
-  currentPlayer.on(HLSPlayer.HLSEVENTS.MEDIA_ERROR, () => markError(true))
-  currentPlayer.on(HLSPlayer.HLSEVENTS.WASM_FAILED, () => markError(true))
-
-  let lastProgressAt = Date.now()
-  let playPending = false
-  const playCurrentStream = () => {
-    if (player !== currentPlayer || playPending) return
-    playPending = true
-    lastProgressAt = Date.now()
-    void currentPlayer
-      .play(playbackUrl)
-      .catch((error: unknown) => {
-        if (player !== currentPlayer) return
-        if (error instanceof DOMException && error.name === 'AbortError') return
-        markError(false)
-      })
-      .finally(() => {
-        playPending = false
-      })
-  }
-  currentPlayer.on(HLSPlayer.HLSEVENTS.ENDED, () => {
-    if (player !== currentPlayer) return
-    replayTimer = window.setTimeout(recoverStalledStream, 250)
-  })
-  // The official compatibility table does not expose `ended` for H.265.
-  // Reload a live playlist when media progress stops instead of treating the
-  // last decoded frame as an active stream.
-  progressWatchdog = window.setInterval(() => {
-    if (player !== currentPlayer || !['media-ready', 'live'].includes(state.value)) return
-    if (Date.now() - lastProgressAt > 4_000) {
-      lastProgressAt = Date.now()
-      recoverStalledStream()
-    }
-  }, 2_000)
-  startPreparedStream = playCurrentStream
-  playerPrepared.value = true
 
   resizeObserver = new ResizeObserver(([entry]) => {
-    if (!entry || !player) return
-    player.resize(Math.max(entry.contentRect.width, 1), Math.max(entry.contentRect.height, 1))
+    if (!entry || player !== currentPlayer) return
+    currentPlayer.resize(
+      Math.max(entry.contentRect.width, 1),
+      Math.max(entry.contentRect.height, 1),
+    )
   })
   resizeObserver.observe(container)
-}
-
-async function recoverPlayback(
-  device: DeviceSummary,
-  channelNo: number,
-  signal: AbortSignal,
-): Promise<void> {
-  if (recoveryInProgress || signal.aborted) return
-  recoveryInProgress = true
-  try {
-    const playback = await fetchLiveStream(device.device_serial, channelNo, signal)
-    protocol.value = playback.protocol.toUpperCase()
-    containerFormat.value = playback.container.toUpperCase()
-    requestedCodec.value = playback.requested_video_codec.toUpperCase()
-    await initializePlayer(
-      playback.playback_url,
-      () => void recoverPlayback(device, channelNo, signal),
-    )
-    startPreparedStream?.()
-  } catch (error) {
-    if (!(error instanceof DOMException && error.name === 'AbortError')) {
-      state.value = 'error'
-    }
-  } finally {
-    recoveryInProgress = false
-  }
-}
-
-function startPlayback(): void {
-  startPreparedStream?.()
 }
 
 async function loadDiagnostics(device: DeviceSummary, channelNo: number, signal: AbortSignal) {
@@ -258,9 +151,7 @@ async function loadDiagnostics(device: DeviceSummary, channelNo: number, signal:
   try {
     diagnostics.value = await fetchMediaInfo(device.device_serial, channelNo, signal)
   } catch (error) {
-    if (!(error instanceof DOMException && error.name === 'AbortError')) {
-      diagnostics.value = null
-    }
+    if (!(error instanceof DOMException && error.name === 'AbortError')) diagnostics.value = null
   } finally {
     if (!signal.aborted) diagnosticsLoading.value = false
   }
@@ -272,12 +163,10 @@ async function connect(): Promise<void> {
   requestController = new AbortController()
   const { signal } = requestController
   state.value = 'loading'
-  recoveryInProgress = false
   protocol.value = null
-  containerFormat.value = null
-  requestedCodec.value = null
   activeDecoder.value = null
-  playerPrepared.value = false
+  firstFrameLatencyMs.value = null
+  playbackError.value = null
   diagnostics.value = null
 
   try {
@@ -295,24 +184,17 @@ async function connect(): Promise<void> {
 
     const channelNo = device.channels.find((channel) => channel.number)?.number ?? 1
     state.value = 'connecting'
-    const playback = await fetchLiveStream(device.device_serial, channelNo, signal)
-    protocol.value = playback.protocol.toUpperCase()
-    containerFormat.value = playback.container.toUpperCase()
-    requestedCodec.value = playback.requested_video_codec.toUpperCase()
+    const connectionStartedAt = performance.now()
+    const session = await fetchBrowserPlaybackSession(device.device_serial, channelNo, signal)
+    protocol.value = session.protocol.toUpperCase()
     void loadDiagnostics(device, channelNo, signal)
-    await initializePlayer(
-      playback.playback_url,
-      () => void recoverPlayback(device, channelNo, signal),
-    )
+    await initializePlayer(session, connectionStartedAt)
   } catch (error) {
     if (!(error instanceof DOMException && error.name === 'AbortError')) {
       state.value = 'unavailable'
+      playbackError.value = '无法创建安全的 EZOPEN 播放会话'
     }
   }
-}
-
-function confirmCameraContent(): void {
-  if (state.value === 'media-ready') state.value = 'live'
 }
 
 function formatBitrate(value: number | null | undefined): string {
@@ -332,7 +214,7 @@ onBeforeUnmount(() => {
     <PageHeader
       eyebrow="LIVE MONITOR"
       title="实时监测"
-      description="通过 CareShield Backend 获取临时 HLS 地址，播放真实萤石摄像头实时画面。"
+      description="使用萤石官方 EZOPEN 协议低延迟播放真实摄像头；HLS 仅保留给后端诊断与 AI Worker。"
     >
       <template #actions>
         <el-button :icon="Refresh" :loading="state === 'loading'" @click="connect">
@@ -354,36 +236,21 @@ onBeforeUnmount(() => {
             </el-tag>
             <el-tag effect="dark" :type="stateTagType">{{ stateLabel }}</el-tag>
             <el-tag v-if="protocol" effect="plain">{{ protocol }}</el-tag>
-            <el-tag v-if="requestedCodec" effect="plain">{{ requestedCodec }}</el-tag>
+            <el-tag v-if="activeDecoder" effect="plain">Decoder {{ activeDecoder }}</el-tag>
           </div>
         </div>
 
         <div class="monitor-workspace__viewport">
-          <div ref="playerContainer" class="monitor-workspace__player"></div>
-          <div v-if="showBlockingPlaceholder" class="monitor-workspace__placeholder">
+          <div :id="playerContainerId" ref="playerContainer" class="monitor-workspace__player"></div>
+          <div v-if="state !== 'live'" class="monitor-workspace__placeholder">
             <el-icon :size="38"><VideoCamera /></el-icon>
             <strong>{{ placeholderMessage }}</strong>
-            <span v-if="state === 'error' || state === 'unavailable'">
-              播放地址不会被保存；可使用上方按钮重新获取临时地址。
-            </span>
-            <el-button
-              v-if="state === 'connecting' && playerPrepared"
-              type="primary"
-              @click="startPlayback"
-            >
-              开始实时播放
-            </el-button>
+            <span v-if="playbackError">{{ playbackError }}</span>
           </div>
         </div>
-        <div v-if="state === 'media-ready'" class="monitor-workspace__verification">
-          <div>
-            <strong>请进行人工画面确认</strong>
-            <span>确认当前显示的是摄像机实时内容，而不是萤石平台生成的错误提示视频。</span>
-          </div>
-          <el-button type="warning" plain @click="confirmCameraContent">
-            确认这是实时画面
-          </el-button>
-        </div>
+        <p class="monitor-workspace__note">
+          EZOPEN 首帧出现后自动标记 LIVE；声音受浏览器自动播放策略限制时，请点击播放器音量控件开启。
+        </p>
       </article>
 
       <aside class="panel-card diagnostics-panel">
@@ -396,11 +263,11 @@ onBeforeUnmount(() => {
         </div>
         <dl>
           <div><dt>设备</dt><dd>{{ selectedDevice?.model || 'Not detected' }}</dd></div>
-          <div><dt>Stream</dt><dd>{{ ['media-ready', 'live'].includes(state) ? 'Decoded' : stateLabel }}</dd></div>
-          <div><dt>Camera Content</dt><dd>{{ state === 'live' ? 'Manually verified' : 'Verification required' }}</dd></div>
-          <div><dt>Requested Codec</dt><dd>{{ requestedCodec || 'Not requested' }}</dd></div>
-          <div><dt>Container</dt><dd>{{ containerFormat || 'Not requested' }}</dd></div>
+          <div><dt>Browser Stream</dt><dd>{{ state === 'live' ? 'Connected' : stateLabel }}</dd></div>
+          <div><dt>Browser Protocol</dt><dd>{{ protocol || 'Not connected' }}</dd></div>
           <div><dt>Browser Decoder</dt><dd>{{ activeDecoder || 'Not initialized' }}</dd></div>
+          <div><dt>First Frame</dt><dd>{{ firstFrameLatencyMs === null ? 'Not measured' : `${firstFrameLatencyMs} ms` }}</dd></div>
+          <div><dt>AI / Probe Protocol</dt><dd>HLS</dd></div>
           <div><dt>Probe</dt><dd>{{ diagnostics?.probe_success ? 'Success' : 'Not probed' }}</dd></div>
           <div><dt>Video Codec</dt><dd>{{ diagnostics?.video?.codec_name || 'Not probed' }}</dd></div>
           <div><dt>Resolution</dt><dd>{{ resolution }}</dd></div>
@@ -408,16 +275,13 @@ onBeforeUnmount(() => {
           <div><dt>Pixel Format</dt><dd>{{ diagnostics?.video?.pixel_format || 'Not probed' }}</dd></div>
           <div><dt>Profile</dt><dd>{{ diagnostics?.video?.profile || 'Not probed' }}</dd></div>
           <div><dt>Video Bitrate</dt><dd>{{ formatBitrate(diagnostics?.video?.bitrate) }}</dd></div>
-          <div>
-            <dt>Audio</dt>
-            <dd>{{ diagnostics ? (diagnostics.audio.available ? 'Available' : 'Unavailable') : 'Not probed' }}</dd>
-          </div>
+          <div><dt>Audio</dt><dd>{{ diagnostics ? (diagnostics.audio.available ? 'Available' : 'Unavailable') : 'Not probed' }}</dd></div>
           <div><dt>Audio Codec</dt><dd>{{ diagnostics ? (diagnostics.audio.codec_name || 'Unavailable') : 'Not probed' }}</dd></div>
           <div><dt>Sample Rate</dt><dd>{{ diagnostics ? (diagnostics.audio.sample_rate ? `${diagnostics.audio.sample_rate} Hz` : 'Unavailable') : 'Not probed' }}</dd></div>
           <div><dt>Channels</dt><dd>{{ diagnostics ? (diagnostics.audio.channels ?? 'Unavailable') : 'Not probed' }}</dd></div>
           <div><dt>Audio Bitrate</dt><dd>{{ formatBitrate(diagnostics?.audio.bitrate) }}</dd></div>
         </dl>
-        <p>诊断数据由 Backend ffprobe 实时读取，不包含播放地址或访问凭据。</p>
+        <p>右侧媒体参数由 Backend 通过 HLS + ffprobe 读取；EZOPEN 只负责浏览器低延迟预览。</p>
       </aside>
     </section>
   </div>
@@ -432,6 +296,7 @@ onBeforeUnmount(() => {
 
 .monitor-workspace__tags {
   display: flex;
+  flex-wrap: wrap;
   gap: 8px;
 }
 
@@ -453,6 +318,7 @@ onBeforeUnmount(() => {
 .monitor-workspace__placeholder {
   position: absolute;
   inset: 0;
+  z-index: 2;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -475,34 +341,11 @@ onBeforeUnmount(() => {
   text-align: center;
 }
 
-.monitor-workspace__verification {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 18px;
-  margin-top: 14px;
-  padding: 12px 14px;
-  border: 1px solid rgb(230 162 60 / 55%);
-  border-radius: 9px;
-  color: #f4d7a2;
-  background: rgb(12 21 19 / 90%);
-  font-size: 12px;
-}
-
-.monitor-workspace__verification > div {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-
-.monitor-workspace__verification strong {
-  color: #ffe1ac;
-  font-size: 13px;
-}
-
-.monitor-workspace__verification span {
-  color: #b8c9c4;
-  line-height: 1.6;
+.monitor-workspace__note {
+  margin: 12px 0 0;
+  color: var(--color-text-muted);
+  font-size: 11px;
+  line-height: 1.7;
 }
 
 .diagnostics-panel {

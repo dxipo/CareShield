@@ -6,6 +6,10 @@ class EzvizNotConfiguredError(EzvizError):
     pass
 
 
+class EzvizBrowserPlaybackDisabledError(EzvizError):
+    pass
+
+
 class EzvizNetworkError(EzvizError):
     pass
 

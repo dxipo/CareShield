@@ -42,8 +42,12 @@ export class ApiRequestError extends Error {
   }
 }
 
-export async function requestJson<T>(path: string, signal?: AbortSignal): Promise<T> {
-  const response = await fetch(path, { signal })
+export async function requestJson<T>(
+  path: string,
+  signal?: AbortSignal,
+  init: RequestInit = {},
+): Promise<T> {
+  const response = await fetch(path, { ...init, signal })
   if (!response.ok) {
     let detail = `请求失败（HTTP ${response.status}）`
     try {

@@ -1,8 +1,13 @@
 from typing import Literal
+from urllib.parse import quote
 
-from app.adapters.ezviz.exceptions import EzvizNotConfiguredError
+from app.adapters.ezviz.exceptions import (
+    EzvizBrowserPlaybackDisabledError,
+    EzvizDeviceOfflineError,
+    EzvizNotConfiguredError,
+)
 from app.adapters.ezviz.stream import EzvizStreamAdapter
-from app.schemas.stream import StreamPlayback
+from app.schemas.stream import BrowserPlaybackSession, StreamPlayback
 from app.services.device_service import DeviceService
 
 
@@ -24,8 +29,6 @@ class StreamService:
     ) -> StreamPlayback:
         device = await self.device_service.get_device(device_serial)
         if device.online is False:
-            from app.adapters.ezviz.exceptions import EzvizDeviceOfflineError
-
             raise EzvizDeviceOfflineError("EZVIZ device is offline")
 
         adapter = self._require_adapter()
@@ -46,6 +49,43 @@ class StreamService:
             requested_video_codec="h265",
             container="mpeg-ts",
             muted=False,
+        )
+
+    async def get_browser_playback_session(
+        self,
+        device_serial: str,
+        *,
+        channel_no: int = 1,
+    ) -> BrowserPlaybackSession:
+        """Create a no-store EZOPEN session for the official browser SDK.
+
+        The official SDK requires both the EZOPEN URL and AccessToken in the
+        browser. This method deliberately keeps that exception separate from
+        the standard HLS contract consumed by ffprobe and the AI Worker.
+        """
+        settings = self.device_service.settings
+        if not settings.browser_playback_enabled:
+            raise EzvizBrowserPlaybackDisabledError(
+                "EZVIZ browser playback is disabled"
+            )
+
+        device = await self.device_service.get_device(device_serial)
+        if device.online is False:
+            raise EzvizDeviceOfflineError("EZVIZ device is offline")
+
+        client = self.device_service.client
+        if client is None:
+            raise EzvizNotConfiguredError("EZVIZ integration is not configured")
+
+        access_token = await client.token_manager.get_access_token()
+        safe_serial = quote(device_serial, safe="")
+        safe_domain = settings.ezopen_domain.strip().strip("/")
+        playback_url = f"ezopen://{safe_domain}/{safe_serial}/{channel_no}.live"
+        return BrowserPlaybackSession(
+            device_id=device.id,
+            channel_no=channel_no,
+            playback_url=playback_url,
+            access_token=access_token,
         )
 
     def _require_adapter(self) -> EzvizStreamAdapter:

@@ -4,18 +4,18 @@
   "version": "0.1.0",
   "type": "module",
   "scripts": {
-    "prepare:hls": "node scripts/copy-ezuikit-assets.mjs",
-    "predev": "npm run prepare:hls",
+    "prepare:player": "node scripts/copy-ezuikit-assets.mjs",
+    "predev": "npm run prepare:player",
     "dev": "vite --host 0.0.0.0",
-    "prebuild": "npm run prepare:hls",
+    "prebuild": "npm run prepare:player",
     "build": "vue-tsc -b && vite build",
     "test": "vitest run",
     "preview": "vite preview --host 0.0.0.0"
   },
   "dependencies": {
     "@element-plus/icons-vue": "^2.3.2",
-    "@ezuikit/player-hls": "^2.0.0",
     "element-plus": "^2.14.4",
+    "ezuikit-js": "^9.0.19",
     "vue": "^3.5.18",
     "vue-router": "^5.2.0"
   },

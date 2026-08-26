@@ -15,6 +15,8 @@ class EzvizSettings:
     app_secret: str
     api_base_url: str = "https://open.ys7.com"
     timeout_seconds: float = 10.0
+    browser_playback_enabled: bool = False
+    ezopen_domain: str = "open.ys7.com"
 
     @property
     def configured(self) -> bool:
@@ -35,6 +37,14 @@ def load_ezviz_settings() -> EzvizSettings:
             "EZVIZ_API_BASE_URL",
             "https://open.ys7.com",
         ).strip().rstrip("/"),
+        browser_playback_enabled=os.getenv(
+            "EZVIZ_BROWSER_PLAYBACK_ENABLED",
+            "false",
+        ).strip().lower() in {"1", "true", "yes", "on"},
+        ezopen_domain=os.getenv(
+            "EZVIZ_EZOPEN_DOMAIN",
+            "open.ys7.com",
+        ).strip(),
     )
 
 

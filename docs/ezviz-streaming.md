@@ -1,20 +1,16 @@
-# EZVIZ Real-time Streaming (M3 / M3.1)
+# EZVIZ Real-time Streaming (M3 / M3.1 / M5.1)
 
-M3 只建立真实 H6c 的浏览器播放与 Ubuntu/ffprobe 消费链路，不包含 AI、设备控制、回放、截图或双向语音。
+M3/M3.1 建立真实 H6c 的标准 HLS 与媒体探测链；M5.1 将浏览器切换到低延迟 EZOPEN，同时保留 HLS 给 Backend 与 AI Worker。
 
 ## 数据链路
 
 ```text
-CS-H6c -> EZVIZ Platform -> temporary HLS address
-                                  |          |
-                                  v          v
-                      official Web player   ffprobe
-                                  |          |
-                                  v          v
-                            /monitor     media metadata
+CS-H6c -> EZVIZ Platform
+                |-- EZOPEN -> official ezuikit-js -> /monitor
+                `-- temporary HLS -> ffprobe / AI Worker -> media and AI results
 ```
 
-Backend 保持 `Route -> StreamService -> EzvizStreamAdapter -> EZVIZ Open API`。Frontend 只使用 CareShield Stream Schema，不了解 AppKey、AppSecret、AccessToken 或萤石原始响应。
+Backend 保持 `Route -> StreamService -> EZVIZ Adapter/TokenManager -> EZVIZ Platform`。Frontend 不接触 AppKey/AppSecret 或萤石原始响应。EZOPEN 官方 Web SDK 明确要求 AccessToken，因此专用会话只在运行时把 Token 交给播放器。
 
 ## 官方接口与协议选择
 
@@ -26,7 +22,11 @@ POST https://open.ys7.com/api/lapp/v2/live/address/get
 
 M3.1 固定请求实时预览（`type=1`）、HLS（`protocol=2`）、主码流（`quality=1`）、H.265 能力（`supportH265=1`）、TS 封装（`containerFormat=0`）、音频不静音（`mute=0`）和 3600 秒有效期。官方兼容性表仅列出 H.265 直播的 TS 封装，因此不选择 fMP4。官方接口允许的有效期范围更大，但一小时足以覆盖当前实时会话，也降低地址泄露后的暴露窗口。
 
-HLS 同时适合浏览器和 ffprobe。现代浏览器不原生支持 RTMP；M3 不为协议数量引入 RTMP/HTTP-FLV 转封装。浏览器播放器使用萤石官方 `@ezuikit/player-hls` 2.0.0，并明确选择 WASM/WebGL `soft` 解码；`isEzviz=true` 让官方播放器附加 H.264/H.265 客户端能力标记。当前真实设备的标准 HLS manifest 是短 `ENDLIST` 片段，而官方兼容性表未列出 H.265 的 `ended` 事件。页面因此监测媒体时间推进；停帧超过阈值后通过 Backend 重新取得临时地址并重建播放器，不依赖缺失的事件，也不在前端长期保存地址。
+标准 HLS 具有约 4–10 秒的首屏与分片缓冲延迟。M5.1 浏览器改用官方推荐的 EZOPEN 私有监控协议和 `ezuikit-js` 9.0.19，官方说明其典型出流约 1 秒。播放器使用 `pcLive` 模板、v3 解码器、本地静态解码资源和 performance-priority quality；首帧事件出现后页面才显示 `LIVE`，并展示该次连接实际首帧时间。
+
+AI Worker 仍使用 HLS：Ubuntu 上的 FFmpeg/PyAV 不支持 `ezopen://` 私有协议，萤石公开 SDK 下载列表也没有适用于通用 Ubuntu 22.04 x86_64 服务端算法的 EZOPEN SDK。浏览器与算法链来自同一设备，但各自使用适合其运行环境的传输协议。
+
+2026-08-26 本机实测：新建 AI HLS 会话的首帧相对摄像机 OSD 约落后 16.2 秒；连续解码 300 帧追到清单流尾后，末帧约落后 6.2 秒。该值包含萤石 HLS 分片与传输缓冲，OSD 仅精确到秒，因此是近似端到端延迟。同期姿态模型单帧推理约 4 ms，不能把推理耗时误当成摄像机到算法的总延迟。20 秒持续观察中媒体连接保持 `connected`、重连增量为 0。M5.1 接受该链路作为 baseline，但正式告警阶段仍需继续降低算法媒体延迟。
 
 官方资料：
 
@@ -37,6 +37,9 @@ HLS 同时适合浏览器和 ffprobe。现代浏览器不原生支持 RTMP；M3 
 - [HLS 播放器兼容性](https://open.ys7.com/help/3715)
 - [HLS 播放器事件](https://open.ys7.com/help/3716)
 - [播放器下载与版本](https://open.ys7.com/cn/s/download)
+- [EZOPEN 协议说明](https://open.ys7.com/help/1751)
+- [视频直播协议对比](https://open.ys7.com/help/2821)
+- [EZUIKit Web 接入](https://open.ys7.com/help/4294)
 
 ## M3.1 误判修复
 
@@ -45,7 +48,7 @@ HLS 同时适合浏览器和 ffprobe。现代浏览器不原生支持 RTMP；M3 
 M3.1 做了两层修正：
 
 - 取流端显式请求 H.265 + TS，并保留音频；浏览器强制使用官方 H.265 软件解码链。
-- 诊断端区分 `probe_success` 与 `camera_content_verified`。ffprobe 只证明媒体可读取，不能证明画面来自摄像机；播放器解码后先显示 `Verification required`，只有人工确认当前画面后才显示 `LIVE`。
+- 诊断端区分 `probe_success` 与 `camera_content_verified`。ffprobe 只证明媒体可读取，不能证明画面来自摄像机。M3.1 的 HLS 页面曾使用人工确认门；M5.1 的 EZOPEN 页面改由官方 SDK 首帧事件驱动 `LIVE`，真实画面仍需在正式验收时人工查看。
 
 不要把 `512×288 / 5 FPS` 写成自动拒绝规则；它只是本次错误提示视频的观测特征，不足以普遍判定媒体内容。
 
@@ -60,15 +63,16 @@ M3.1 做了两层修正：
 ## 安全边界
 
 - AppKey/AppSecret 仅位于被 Git 忽略的根目录 `.env`，由 Backend 读取。
-- AccessToken 仅在 Backend 内存中缓存，不返回浏览器。
+- AccessToken 默认只在 Backend 内存中缓存。启用 EZOPEN Web 后，仅专用播放会话在运行时返回给官方 SDK，响应强制 `Cache-Control: no-store, private` 和 `Pragma: no-cache`。
 - HLS 地址不写入 `.env`、数据库、README、日志或测试 fixture。
-- `/stream` 只为当前播放器会话返回临时地址；`/media-info` 不返回地址。
+- `/browser-playback` 仅用于可信浏览器会话；Token 和 EZOPEN URL 不写日志或持久化。
+- `/stream` 保留给诊断和内部媒体链；`/media-info` 不返回任何播放地址。
 - 异常只返回安全摘要和必要的萤石错误码，不回显第三方原始响应。
 - UI 不显示完整设备序列号。
 
 ## Web 播放
 
-Frontend 构建前由 `npm run prepare:hls` 将官方包内的 `decoder.wasm` 与 `decoder.worker.js` 复制到被 Git 忽略的 `public/ezuikit-hls/`。这些是 npm 安装产物，不在仓库中重复保存。
+Frontend 构建前由 `npm run prepare:player` 将官方包内 `ezuikit_static` 复制到被 Git 忽略的 `public/ezuikit_static/`。这些是 npm 安装产物，不在仓库中重复保存。
 
 访问：
 
@@ -76,7 +80,7 @@ Frontend 构建前由 `npm run prepare:hls` 将官方包内的 `decoder.wasm` �
 http://localhost:5173/monitor
 ```
 
-页面会选择真实在线 H6c、请求临时地址并创建播放器。浏览器音频策略要求用户手势，因此首次连接后需点击“开始实时播放”；播放器保持静音启动，用户可再通过官方音量控件开启声音。刷新/重连会销毁旧播放器，再从 Backend 请求新地址。首帧出现只表示媒体已解码；页面会要求人工确认画面内容，确认前不会显示 `LIVE`。
+页面会选择真实在线 H6c、请求禁止缓存的 EZOPEN 会话并创建播放器。刷新/重连会销毁旧实例并获取新会话。首帧事件触发 `LIVE`，不再显示遮挡播放器控制栏的人工确认按钮。浏览器阻止自动播放声音时，用户通过官方音量控件开启声音。
 
 ## ffprobe
 
