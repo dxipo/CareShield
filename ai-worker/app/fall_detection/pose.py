@@ -45,6 +45,19 @@ class PosePerson:
 
 
 @dataclass(frozen=True, slots=True)
+class PersonDetection:
+    bbox: BoundingBox
+    confidence: float
+
+
+@dataclass(frozen=True, slots=True)
+class PersonDetectionFrame:
+    timestamp: datetime
+    detections: tuple[PersonDetection, ...]
+    inference_ms: float
+
+
+@dataclass(frozen=True, slots=True)
 class PoseFrame:
     timestamp: datetime
     source_width: int
@@ -55,3 +68,19 @@ class PoseFrame:
     @property
     def primary_person(self) -> PosePerson | None:
         return max(self.persons, key=lambda person: person.bbox_confidence, default=None)
+
+
+def pose_is_reliable(
+    person: PosePerson,
+    minimum_confidence: float,
+    minimum_keypoints: int = 6,
+) -> bool:
+    """Require enough usable joints before a pose can reach the classifier."""
+
+    reliable_points = sum(
+        point.confidence >= minimum_confidence for point in person.keypoints
+    )
+    return (
+        reliable_points >= minimum_keypoints
+        and person.mean_keypoint_confidence >= minimum_confidence
+    )

@@ -98,6 +98,7 @@ def test_stream_response_mapping_and_request_parameters(caplog: pytest.LogCaptur
             "support_h265": True,
             "container_format": 0,
             "mute": False,
+            "protocol": 2,
         }
     ]
     assert playback_url not in caplog.text
@@ -151,6 +152,42 @@ def test_live_address_posts_h265_ts_and_unmuted_parameters() -> None:
     assert observed_form["supportH265"] == ["1"]
     assert observed_form["containerFormat"] == ["0"]
     assert observed_form["mute"] == ["0"]
+
+
+def test_http_flv_stream_uses_protocol_four_without_hls_container() -> None:
+    playback_url = "https://example.invalid/live.flv?sensitive=temporary"
+    client = FakeStreamClient(
+        {"code": "200", "data": {"url": playback_url, "expireTime": None}}
+    )
+    service = StreamService(
+        FakeDeviceService(),  # type: ignore[arg-type]
+        EzvizStreamAdapter(client),  # type: ignore[arg-type]
+    )
+
+    stream = asyncio.run(
+        service.get_live_stream(
+            "TEST123456",
+            channel_no=1,
+            quality="high",
+            protocol="http_flv",
+        )
+    )
+
+    assert stream.protocol == "http_flv"
+    assert stream.container == "flv"
+    assert stream.playback_url == playback_url
+    assert client.calls == [
+        {
+            "device_serial": "TEST123456",
+            "channel_no": 1,
+            "quality": 1,
+            "expire_seconds": 3600,
+            "support_h265": True,
+            "container_format": None,
+            "mute": False,
+            "protocol": 4,
+        }
+    ]
 
 
 def test_missing_device_is_preserved() -> None:

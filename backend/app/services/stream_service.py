@@ -26,18 +26,23 @@ class StreamService:
         *,
         channel_no: int = 1,
         quality: Literal["high", "fluent"] = "high",
+        protocol: Literal["hls", "http_flv"] = "hls",
     ) -> StreamPlayback:
         device = await self.device_service.get_device(device_serial)
         if device.online is False:
             raise EzvizDeviceOfflineError("EZVIZ device is offline")
 
         adapter = self._require_adapter()
-        stream = await adapter.get_hls_preview(
+        request = (
+            adapter.get_http_flv_preview
+            if protocol == "http_flv"
+            else adapter.get_hls_preview
+        )
+        stream = await request(
             device_serial,
             channel_no=channel_no,
             quality=1 if quality == "high" else 2,
             support_h265=True,
-            container_format=0,
             mute=False,
         )
         return StreamPlayback(
@@ -46,8 +51,9 @@ class StreamService:
             playback_url=str(stream["playback_url"]),
             expires_at=stream["expires_at"],
             quality=quality,
+            protocol=protocol,
             requested_video_codec="h265",
-            container="mpeg-ts",
+            container="flv" if protocol == "http_flv" else "mpeg-ts",
             muted=False,
         )
 

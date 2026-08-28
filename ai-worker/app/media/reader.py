@@ -83,7 +83,11 @@ class _PyAvSession:
 
 
 class MediaReader:
-    """Refreshable HLS/H.265 reader with URL-safe reconnect logging."""
+    """Refreshable H.265 reader with URL-safe reconnect logging.
+
+    The browser uses EZOPEN while the Backend issues HTTP-FLV to this reader,
+    keeping camera credentials out of the Worker and reducing inference delay.
+    """
 
     def __init__(
         self,
@@ -96,10 +100,15 @@ class MediaReader:
         self._reconnect_seconds = reconnect_seconds
         self._status_callback = status_callback or (lambda _: None)
         self.reconnect_count = 0
+        self.last_disconnect_reason: str | None = None
+        self.last_session_frames = 0
+        self.last_session_seconds: float | None = None
 
     async def frames(self, device_serial: str) -> AsyncIterator[DecodedFrame]:
         while True:
             session: _PyAvSession | None = None
+            session_frames = 0
+            session_started = time.monotonic()
             try:
                 self._status_callback("connecting")
                 temporary_stream = await self._client.get_stream(device_serial)
@@ -108,17 +117,25 @@ class MediaReader:
                     temporary_stream.playback_url,
                 )
                 self._status_callback("connected")
+                self.last_disconnect_reason = None
                 while True:
                     frame = await asyncio.to_thread(session.next_frame)
                     if frame is None:
                         raise MediaReaderError("Camera stream ended")
+                    session_frames += 1
                     yield frame
             except asyncio.CancelledError:
                 raise
-            except (MediaBackendError, MediaReaderError):
+            except (MediaBackendError, MediaReaderError) as exc:
                 self.reconnect_count += 1
+                self.last_disconnect_reason = str(exc)
+                self.last_session_frames = session_frames
+                self.last_session_seconds = time.monotonic() - session_started
                 self._status_callback("reconnecting")
-                logger.warning("Camera media input unavailable; retrying with a fresh address")
+                logger.warning(
+                    "Camera media input unavailable (%s); retrying with a fresh address",
+                    self.last_disconnect_reason,
+                )
                 await asyncio.sleep(self._reconnect_seconds)
             finally:
                 if session is not None:

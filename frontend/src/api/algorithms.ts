@@ -22,3 +22,19 @@ export function fetchAlgorithmsStatus(signal?: AbortSignal): Promise<AlgorithmsS
 export function fetchSystemStatus(signal?: AbortSignal): Promise<SystemStatus> {
   return requestJson('/api/system/status', signal)
 }
+
+export function fetchFallDetectionHistory(
+  limit = 20,
+  signal?: AbortSignal,
+): Promise<AlgorithmResult[]> {
+  return requestJson(`/api/fall-detection/history?limit=${limit}`, signal)
+}
+
+export function acknowledgeFallAlert(signal?: AbortSignal): Promise<{
+  alert_active: boolean
+  alert_acknowledged: boolean
+}> {
+  return requestJson('/api/fall-detection/alert/acknowledge', signal, {
+    method: 'POST',
+  })
+}

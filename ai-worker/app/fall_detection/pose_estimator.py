@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import os
 import time
+from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
@@ -53,6 +54,7 @@ class UltralyticsPoseEstimator:
         self.last_inference_ms: float | None = None
         self._inference_count = 0
         self._inference_total_seconds = 0.0
+        self.last_region_rotation = "none"
 
     def load(self) -> None:
         started = time.perf_counter()
@@ -123,6 +125,73 @@ class UltralyticsPoseEstimator:
             raise
         except Exception as exc:
             raise PoseModelError("Pose inference failed") from exc
+
+    def infer_region(
+        self,
+        frame: DecodedFrame,
+        region: BoundingBox,
+        padding: float = 0.08,
+    ) -> PoseFrame:
+        """Retry pose on a real detected-person crop and map it to the source.
+
+        This is a second model inference, not carried or fabricated keypoints.
+        It is used only when full-frame pose misses an independently detected
+        person, which is common for small horizontal bodies.
+        """
+        image_height, image_width = frame.image.shape[:2]
+        x1 = max(0.0, region.x1 - padding)
+        y1 = max(0.0, region.y1 - padding)
+        x2 = min(1.0, region.x2 + padding)
+        y2 = min(1.0, region.y2 + padding)
+        left, top = int(x1 * image_width), int(y1 * image_height)
+        right, bottom = int(x2 * image_width), int(y2 * image_height)
+        if right - left < 32 or bottom - top < 32:
+            return PoseFrame(
+                timestamp=frame.captured_at,
+                source_width=frame.source_width,
+                source_height=frame.source_height,
+                persons=(),
+                inference_ms=0.0,
+            )
+        crop = frame.image[top:bottom, left:right]
+        cropped_frame = replace(
+            frame,
+            image=crop,
+            source_width=right - left,
+            source_height=bottom - top,
+        )
+        self.last_region_rotation = "none"
+        result = self.infer(cropped_frame)
+        total_inference_ms = result.inference_ms
+        if not result.persons and region.width > region.height * 1.10:
+            import cv2
+
+            rotations = (
+                ("clockwise", cv2.ROTATE_90_CLOCKWISE),
+                ("counterclockwise", cv2.ROTATE_90_COUNTERCLOCKWISE),
+            )
+            for direction, rotation in rotations:
+                rotated = cv2.rotate(crop, rotation)
+                rotated_frame = replace(
+                    cropped_frame,
+                    image=rotated,
+                    source_width=rotated.shape[1],
+                    source_height=rotated.shape[0],
+                )
+                rotated_result = self.infer(rotated_frame)
+                total_inference_ms += rotated_result.inference_ms
+                if rotated_result.persons:
+                    result = _unrotate_pose_frame(rotated_result, direction)
+                    self.last_region_rotation = direction
+                    break
+        result = replace(result, inference_ms=total_inference_ms)
+        crop_region = BoundingBox(x1=x1, y1=y1, x2=x2, y2=y2)
+        return _remap_pose_frame(
+            result,
+            crop_region,
+            frame.source_width,
+            frame.source_height,
+        )
 
     @property
     def inference_fps(self) -> float | None:
@@ -202,6 +271,93 @@ class UltralyticsPoseEstimator:
 
 def _unit(value: float) -> float:
     return max(0.0, min(1.0, value))
+
+
+def _remap_pose_frame(
+    frame: PoseFrame,
+    region: BoundingBox,
+    source_width: int,
+    source_height: int,
+) -> PoseFrame:
+    def x(value: float) -> float:
+        return _unit(region.x1 + value * region.width)
+
+    def y(value: float) -> float:
+        return _unit(region.y1 + value * region.height)
+
+    persons = tuple(
+        PosePerson(
+            person_id=person.person_id,
+            bbox=BoundingBox(
+                x1=x(person.bbox.x1),
+                y1=y(person.bbox.y1),
+                x2=x(person.bbox.x2),
+                y2=y(person.bbox.y2),
+            ),
+            bbox_confidence=person.bbox_confidence,
+            keypoints=tuple(
+                PoseKeypoint(
+                    name=point.name,
+                    x=x(point.x),
+                    y=y(point.y),
+                    confidence=point.confidence,
+                )
+                for point in person.keypoints
+            ),
+        )
+        for person in frame.persons
+    )
+    return PoseFrame(
+        timestamp=frame.timestamp,
+        source_width=source_width,
+        source_height=source_height,
+        persons=persons,
+        inference_ms=frame.inference_ms,
+    )
+
+
+def _unrotate_pose_frame(frame: PoseFrame, direction: str) -> PoseFrame:
+    if direction not in {"clockwise", "counterclockwise"}:
+        raise ValueError("Unsupported pose crop rotation")
+
+    def point(x: float, y: float) -> tuple[float, float]:
+        if direction == "clockwise":
+            return _unit(y), _unit(1.0 - x)
+        return _unit(1.0 - y), _unit(x)
+
+    persons: list[PosePerson] = []
+    for person in frame.persons:
+        corners = (
+            point(person.bbox.x1, person.bbox.y1),
+            point(person.bbox.x2, person.bbox.y1),
+            point(person.bbox.x1, person.bbox.y2),
+            point(person.bbox.x2, person.bbox.y2),
+        )
+        xs = [value[0] for value in corners]
+        ys = [value[1] for value in corners]
+        persons.append(
+            PosePerson(
+                person_id=person.person_id,
+                bbox=BoundingBox(min(xs), min(ys), max(xs), max(ys)),
+                bbox_confidence=person.bbox_confidence,
+                keypoints=tuple(
+                    PoseKeypoint(
+                        name=keypoint.name,
+                        x=point(keypoint.x, keypoint.y)[0],
+                        y=point(keypoint.x, keypoint.y)[1],
+                        confidence=keypoint.confidence,
+                    )
+                    for keypoint in person.keypoints
+                ),
+            )
+        )
+    return PoseFrame(
+        timestamp=frame.timestamp,
+        source_width=frame.source_height,
+        source_height=frame.source_width,
+        persons=tuple(persons),
+        inference_ms=frame.inference_ms,
+    )
 
 
 def _sha256(path: Path) -> str:

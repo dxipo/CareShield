@@ -27,6 +27,52 @@ class EzvizStreamAdapter:
         container_format: int = 0,
         mute: bool = False,
     ) -> dict[str, str | None]:
+        return await self._get_preview(
+            device_serial,
+            channel_no=channel_no,
+            quality=quality,
+            expire_seconds=expire_seconds,
+            support_h265=support_h265,
+            container_format=container_format,
+            mute=mute,
+            protocol=2,
+        )
+
+    async def get_http_flv_preview(
+        self,
+        device_serial: str,
+        *,
+        channel_no: int,
+        quality: int,
+        expire_seconds: int = 3600,
+        support_h265: bool = True,
+        mute: bool = False,
+    ) -> dict[str, str | None]:
+        """Get the lower-latency HTTP-FLV stream used by the AI Worker."""
+
+        return await self._get_preview(
+            device_serial,
+            channel_no=channel_no,
+            quality=quality,
+            expire_seconds=expire_seconds,
+            support_h265=support_h265,
+            container_format=None,
+            mute=mute,
+            protocol=4,
+        )
+
+    async def _get_preview(
+        self,
+        device_serial: str,
+        *,
+        channel_no: int,
+        quality: int,
+        expire_seconds: int,
+        support_h265: bool,
+        container_format: int | None,
+        mute: bool,
+        protocol: int,
+    ) -> dict[str, str | None]:
         try:
             payload = await self.client.get_live_address(
                 device_serial,
@@ -36,6 +82,7 @@ class EzvizStreamAdapter:
                 support_h265=support_h265,
                 container_format=container_format,
                 mute=mute,
+                protocol=protocol,
             )
         except EzvizApiError as exc:
             if exc.code in {"20001", "20002"}:

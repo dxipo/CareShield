@@ -93,28 +93,32 @@ class EzvizClient:
         quality: int,
         expire_seconds: int,
         support_h265: bool,
-        container_format: int,
+        container_format: int | None,
         mute: bool,
+        protocol: int = 2,
     ) -> dict[str, Any]:
-        """Request a temporary standard HLS preview address from EZVIZ.
+        """Request a temporary standard preview address from EZVIZ.
 
-        H.265 capability and its HLS container are deliberately explicit. An
-        omitted capability can make the media endpoint return a decodable
-        compatibility notice instead of the camera stream.
+        H.265 capability is deliberately explicit. For HLS, an omitted
+        container can make the endpoint return a decodable compatibility
+        notice instead of the camera stream. HTTP-FLV does not use that HLS
+        container option.
         """
+        request_data = {
+            "deviceSerial": device_serial,
+            "channelNo": channel_no,
+            "protocol": protocol,
+            "type": 1,
+            "quality": quality,
+            "expireTime": expire_seconds,
+            "supportH265": int(support_h265),
+            "mute": int(mute),
+        }
+        if container_format is not None:
+            request_data["containerFormat"] = container_format
         return await self._authorized_post(
             "/api/lapp/v2/live/address/get",
-            {
-                "deviceSerial": device_serial,
-                "channelNo": channel_no,
-                "protocol": 2,
-                "type": 1,
-                "quality": quality,
-                "expireTime": expire_seconds,
-                "supportH265": int(support_h265),
-                "containerFormat": container_format,
-                "mute": int(mute),
-            },
+            request_data,
         )
 
     async def check_reachable(self) -> None:

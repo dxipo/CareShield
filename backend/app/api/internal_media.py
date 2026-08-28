@@ -49,6 +49,7 @@ async def get_worker_stream(
             device_serial,
             channel_no=channel_no,
             quality=quality,
+            protocol="http_flv",
         )
     except EzvizError as exc:
         raise _internal_media_exception(exc) from exc

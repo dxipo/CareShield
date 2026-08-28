@@ -1,6 +1,10 @@
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, HTTPException
+import secrets
+from typing import Annotated
+
+from fastapi import FastAPI, Header, HTTPException, status
+from fastapi.responses import StreamingResponse
 
 from careshield_contracts import AlgorithmCapabilities, AlgorithmResult
 
@@ -29,6 +33,19 @@ async def lifespan(_: FastAPI):
 app = FastAPI(title="CareShield AI Worker", version=settings.worker_version, lifespan=lifespan)
 
 
+def require_internal_credentials(authorization: str | None) -> None:
+    scheme, _, token = (authorization or "").partition(" ")
+    if not (
+        settings.shared_token
+        and scheme.lower() == "bearer"
+        and secrets.compare_digest(token, settings.shared_token)
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid internal worker credentials",
+        )
+
+
 @app.get("/health")
 async def health() -> dict[str, str]:
     return {"status": "ok", "service": "ai-worker"}
@@ -37,6 +54,26 @@ async def health() -> dict[str, str]:
 @app.get("/capabilities", response_model=AlgorithmCapabilities)
 async def capabilities() -> AlgorithmCapabilities:
     return runtime.capabilities
+
+
+@app.get("/internal/fall-detection/preview.mjpeg")
+async def fall_detection_preview(
+    authorization: Annotated[str | None, Header()] = None,
+) -> StreamingResponse:
+    require_internal_credentials(authorization)
+    return StreamingResponse(
+        fall_detection_service.preview.stream(),
+        media_type="multipart/x-mixed-replace; boundary=frame",
+        headers={"Cache-Control": "no-store, private", "X-Content-Type-Options": "nosniff"},
+    )
+
+
+@app.post("/internal/fall-detection/alert/acknowledge")
+async def acknowledge_fall_alert(
+    authorization: Annotated[str | None, Header()] = None,
+) -> dict[str, bool]:
+    require_internal_credentials(authorization)
+    return fall_detection_service.acknowledge_alert()
 
 
 if settings.development:

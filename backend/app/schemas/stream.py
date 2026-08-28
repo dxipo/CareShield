@@ -6,12 +6,12 @@ from pydantic import BaseModel
 class StreamPlayback(BaseModel):
     device_id: str
     channel_no: int
-    protocol: Literal["hls"] = "hls"
+    protocol: Literal["hls", "http_flv"] = "hls"
     playback_url: str
     expires_at: str | None = None
     quality: Literal["high", "fluent"]
     requested_video_codec: Literal["h265"] = "h265"
-    container: Literal["mpeg-ts"] = "mpeg-ts"
+    container: Literal["mpeg-ts", "flv"] = "mpeg-ts"
     muted: bool = False
 
 

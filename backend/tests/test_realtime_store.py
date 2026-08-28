@@ -17,6 +17,7 @@ class FakeRedis:
     def __init__(self) -> None:
         self.values: dict[str, str] = {}
         self.expirations: dict[str, int] = {}
+        self.lists: dict[str, list[str]] = {}
 
     async def ping(self):
         return True
@@ -33,6 +34,22 @@ class FakeRedis:
         for key in self.values:
             if key.startswith(prefix):
                 yield key
+
+    async def lindex(self, key, index):
+        values = self.lists.get(key, [])
+        return values[index] if len(values) > index else None
+
+    async def lpush(self, key, value):
+        self.lists.setdefault(key, []).insert(0, value)
+
+    async def ltrim(self, key, start, end):
+        self.lists[key] = self.lists.get(key, [])[start:end + 1]
+
+    async def expire(self, key, seconds):
+        self.expirations[key] = seconds
+
+    async def lrange(self, key, start, end):
+        return self.lists.get(key, [])[start:end + 1]
 
     async def aclose(self):
         return None
@@ -106,5 +123,34 @@ def test_device_result_is_saved_under_device_and_global_latest_keys() -> None:
         assert len(fall_keys) == 2
         restored = await store.get_latest_result("fall_detection")
         assert restored is not None and restored.result_id == result.result_id
+
+    asyncio.run(run())
+
+
+def test_fall_history_keeps_real_state_changes_without_duplicate_heartbeats() -> None:
+    async def run() -> None:
+        store = RealtimeStore(settings())
+        fake = FakeRedis()
+        store._redis = fake
+
+        def result(label: str) -> AlgorithmResult:
+            return AlgorithmResult(
+                result_id=uuid4(),
+                task=AlgorithmTask.FALL_DETECTION,
+                model_id="stgcn-extend",
+                model_version="m5.2",
+                result_timestamp=datetime.now(timezone.utc),
+                label=label,
+                metadata={"alert_active": label == "fallen"},
+                simulated=False,
+            )
+
+        await store.append_fall_history(result("normal"))
+        await store.append_fall_history(result("normal"))
+        await store.append_fall_history(result("fallen"))
+
+        history = await store.get_fall_history()
+        assert [item.label for item in history] == ["fallen", "normal"]
+        assert fake.expirations[store.HISTORY_KEY] == 1234
 
     asyncio.run(run())

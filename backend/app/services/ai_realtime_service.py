@@ -20,12 +20,16 @@ class AiRealtimeService:
 
     async def ingest_result(self, result: AlgorithmResult) -> RealtimeEnvelope:
         await self._store.save_latest_result(result)
+        await self._store.append_fall_history(result)
         envelope = self._envelope(
             RealtimeMessageType.ALGORITHM_RESULT,
             result.model_dump(mode="json"),
         )
         await self._hub.broadcast(envelope)
         return envelope
+
+    async def fall_history(self, limit: int = 20) -> list[AlgorithmResult]:
+        return await self._store.get_fall_history(limit)
 
     async def record_heartbeat(self, heartbeat: WorkerHeartbeat) -> RealtimeEnvelope:
         await self._store.save_worker(heartbeat)

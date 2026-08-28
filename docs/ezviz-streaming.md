@@ -1,13 +1,14 @@
 # EZVIZ Real-time Streaming (M3 / M3.1 / M5.1)
 
-M3/M3.1 建立真实 H6c 的标准 HLS 与媒体探测链；M5.1 将浏览器切换到低延迟 EZOPEN，同时保留 HLS 给 Backend 与 AI Worker。
+M3/M3.1 建立真实 H6c 的标准 HLS 与媒体探测链；M5.1 将浏览器切换到低延迟 EZOPEN；M5.2 保留 HLS 给 Backend 诊断，并将 AI Worker 输入切换为 HTTP-FLV。
 
 ## 数据链路
 
 ```text
 CS-H6c -> EZVIZ Platform
                 |-- EZOPEN -> official ezuikit-js -> /monitor
-                `-- temporary HLS -> ffprobe / AI Worker -> media and AI results
+                |-- temporary HLS -> ffprobe -> safe media metadata
+                `-- temporary HTTP-FLV -> AI Worker -> AI results
 ```
 
 Backend 保持 `Route -> StreamService -> EZVIZ Adapter/TokenManager -> EZVIZ Platform`。Frontend 不接触 AppKey/AppSecret 或萤石原始响应。EZOPEN 官方 Web SDK 明确要求 AccessToken，因此专用会话只在运行时把 Token 交给播放器。
@@ -24,9 +25,9 @@ M3.1 固定请求实时预览（`type=1`）、HLS（`protocol=2`）、主码流�
 
 标准 HLS 具有约 4–10 秒的首屏与分片缓冲延迟。M5.1 浏览器改用官方推荐的 EZOPEN 私有监控协议和 `ezuikit-js` 9.0.19，官方说明其典型出流约 1 秒。播放器使用 `pcLive` 模板、v3 解码器、本地静态解码资源和 performance-priority quality；首帧事件出现后页面才显示 `LIVE`，并展示该次连接实际首帧时间。
 
-AI Worker 仍使用 HLS：Ubuntu 上的 FFmpeg/PyAV 不支持 `ezopen://` 私有协议，萤石公开 SDK 下载列表也没有适用于通用 Ubuntu 22.04 x86_64 服务端算法的 EZOPEN SDK。浏览器与算法链来自同一设备，但各自使用适合其运行环境的传输协议。
+AI Worker 不直接使用 EZOPEN：Ubuntu 上的 FFmpeg/PyAV 不支持 `ezopen://` 私有协议，萤石公开 SDK 下载列表也没有适用于通用 Ubuntu 22.04 x86_64 服务端算法的 EZOPEN SDK。M5.2 由同一个官方实时地址接口请求 `protocol=4`、`type=1`、`quality=1`、`supportH265=1`、`mute=0` 的 HTTP-FLV，且不发送仅属于 HLS 的 `containerFormat`。浏览器与算法链来自同一设备，但使用各自运行环境可稳定消费的低延迟协议。
 
-2026-08-26 本机实测：新建 AI HLS 会话的首帧相对摄像机 OSD 约落后 16.2 秒；连续解码 300 帧追到清单流尾后，末帧约落后 6.2 秒。该值包含萤石 HLS 分片与传输缓冲，OSD 仅精确到秒，因此是近似端到端延迟。同期姿态模型单帧推理约 4 ms，不能把推理耗时误当成摄像机到算法的总延迟。20 秒持续观察中媒体连接保持 `connected`、重连增量为 0。M5.1 接受该链路作为 baseline，但正式告警阶段仍需继续降低算法媒体延迟。
+2026-08-26 本机旧 HLS 实测：新会话首帧相对摄像机 OSD 约落后 16.2 秒；追到流尾后约落后 6.2 秒。该结果不再代表 M5.2 AI 输入。HTTP-FLV 的真实持续运行、重连和端到端延迟需要在部署新 Worker 后单独验收；推理耗时不能替代摄像机到算法的总延迟。
 
 官方资料：
 
@@ -64,7 +65,7 @@ M3.1 做了两层修正：
 
 - AppKey/AppSecret 仅位于被 Git 忽略的根目录 `.env`，由 Backend 读取。
 - AccessToken 默认只在 Backend 内存中缓存。启用 EZOPEN Web 后，仅专用播放会话在运行时返回给官方 SDK，响应强制 `Cache-Control: no-store, private` 和 `Pragma: no-cache`。
-- HLS 地址不写入 `.env`、数据库、README、日志或测试 fixture。
+- HLS/HTTP-FLV 地址不写入 `.env`、数据库、README、日志或测试 fixture。
 - `/browser-playback` 仅用于可信浏览器会话；Token 和 EZOPEN URL 不写日志或持久化。
 - `/stream` 保留给诊断和内部媒体链；`/media-info` 不返回任何播放地址。
 - 异常只返回安全摘要和必要的萤石错误码，不回显第三方原始响应。

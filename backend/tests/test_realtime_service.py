@@ -21,6 +21,9 @@ class RecordingStore:
     async def save_latest_result(self, result):
         self.latest = result
 
+    async def append_fall_history(self, result):
+        return None
+
 
 class RecordingSocket:
     def __init__(self) -> None:

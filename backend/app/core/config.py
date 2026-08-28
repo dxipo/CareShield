@@ -55,6 +55,7 @@ class AiRealtimeSettings:
     shared_token: str
     worker_ttl_seconds: int
     latest_result_ttl_seconds: int
+    worker_internal_url: str = "http://ai-worker:8080"
 
     @property
     def configured(self) -> bool:
@@ -74,4 +75,8 @@ def load_ai_realtime_settings() -> AiRealtimeSettings:
         latest_result_ttl_seconds=int(
             os.getenv("AI_LATEST_RESULT_TTL_SECONDS", "3600")
         ),
+        worker_internal_url=os.getenv(
+            "AI_WORKER_INTERNAL_URL",
+            "http://ai-worker:8080",
+        ).strip().rstrip("/"),
     )

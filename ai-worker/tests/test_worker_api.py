@@ -28,3 +28,9 @@ def test_capabilities_truthfully_report_fall_detector_starting_only() -> None:
         "fall_risk": "not_installed",
         "fraud_detection": "not_installed",
     }
+
+
+def test_preview_requires_internal_worker_credentials() -> None:
+    response = get("/internal/fall-detection/preview.mjpeg")
+    assert response.status_code == 401
+    assert "credentials" in response.json()["detail"]

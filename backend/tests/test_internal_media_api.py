@@ -23,14 +23,17 @@ class FakeDeviceService:
 
 
 class FakeStreamService:
-    async def get_live_stream(self, device_serial, *, channel_no, quality):
+    async def get_live_stream(self, device_serial, *, channel_no, quality, protocol):
         assert device_serial == "TEST-SERIAL"
+        assert protocol == "http_flv"
         return StreamPlayback(
             device_id="ezviz_safe_id",
             channel_no=channel_no,
-            playback_url="https://temporary.invalid/live.m3u8",
+            protocol="http_flv",
+            playback_url="https://temporary.invalid/live.flv",
             expires_at=None,
             quality=quality,
+            container="flv",
         )
 
 
@@ -67,6 +70,8 @@ def test_internal_media_requires_worker_auth_and_returns_no_ezviz_secrets(monkey
     assert denied.status_code == 401
     assert devices_response.status_code == 200
     assert stream_response.status_code == 200
+    assert stream_response.json()["protocol"] == "http_flv"
+    assert stream_response.json()["container"] == "flv"
     combined = devices_response.text + stream_response.text
     assert "internal-test-token" not in combined
     assert "appSecret" not in combined

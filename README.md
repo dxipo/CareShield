@@ -4,9 +4,9 @@
 
 本项目面向“揭榜挂帅——基于多模态 AI 监测的老年人跌倒风险、心理健康、诈骗识别及预警研究”，计划支持跌倒风险评估、实时跌倒检测和诈骗风险识别。目标摄像设备为 EZVIZ CS-H6c (8WFL, 4mm)。
 
-## 当前阶段：M5.1 EZOPEN Low-latency Web Playback
+## 当前阶段：M5.2 STGCN-Extend Real Fall Detection
 
-M0–M5 已完成基础工程、Dashboard、真实萤石音视频、统一实时结果链和 GPU 跌倒检测基线。M5.1 将浏览器预览从高延迟标准 HLS 切换为萤石官方 EZOPEN；AI Worker 继续通过 Backend 临时 HLS 地址解码同一 H6c，因为 FFmpeg/PyAV 不能直接消费私有 EZOPEN 协议。
+M0–M5.1 已完成基础工程、Dashboard、真实萤石音视频、统一实时结果链和 GPU 姿态检测基线。M5.2 将既有论文工程 `STGCN-Extend` 的真实二分类权重接入 AI Worker，并把算法媒体输入从高延迟 HLS 调整为 Backend 临时签发的 HTTP-FLV；浏览器继续使用低延迟 EZOPEN。
 
 当前能力状态：
 
@@ -14,11 +14,11 @@ M0–M5 已完成基础工程、Dashboard、真实萤石音视频、统一实时
 | --- | --- |
 | EZVIZ device query | Implemented in M2 |
 | Browser live streaming | M5.1 EZOPEN low-latency preview |
-| AI media input | H.265 HLS through authenticated Backend endpoint |
+| AI media input | H.265 HTTP-FLV through authenticated Backend endpoint |
 | Media diagnostics | Implemented in M3.1; probe and content verification are separate |
 | AI realtime infrastructure | Implemented in M4; pipeline test is explicitly simulated |
-| AI models | YOLO26n-pose installed in M5 Worker only |
-| Fall Detection | M5 real pose + temporal heuristic baseline |
+| AI models | YOLO26n-pose + STGCN-Extend binary classifier in AI Worker only |
+| Fall Detection | M5.2 real COCO17 sequence + STGCN-Extend baseline |
 | Fall Risk | Not implemented |
 | Fraud Detection | Not implemented |
 
@@ -42,8 +42,10 @@ AI Worker -> ResultPublisher -> Backend internal API -> Redis -> /ws/realtime ->
 M5 真实跌倒检测链：
 
 ```text
-H6c -> Backend authenticated temporary stream -> AI Worker H.265 decode
-     -> frame sampling -> pose -> temporal detector -> M4 realtime result chain
+H6c -> Backend authenticated temporary HTTP-FLV -> AI Worker H.265 decode
+     -> sampling -> YOLO Person + YOLO Pose -> fusion/tracking
+     -> 2 s real observations resampled to 75 COCO17 model frames
+     -> STGCN-Extend -> decision debounce -> M4 realtime result chain
 ```
 
 设备与双媒体链：
@@ -51,7 +53,7 @@ H6c -> Backend authenticated temporary stream -> AI Worker H.265 decode
 ```text
 Frontend -> CareShield API Route -> Device Service -> EZVIZ Adapter -> EZVIZ Open API
 Browser -> no-store playback session -> EZOPEN -> official EZUIKit player
-AI Worker -> authenticated internal API -> temporary HLS -> PyAV/FFmpeg
+AI Worker -> authenticated internal API -> temporary HTTP-FLV -> PyAV/FFmpeg
 Backend ffprobe ---------------------------> temporary HLS -> safe media metadata
 ```
 
@@ -89,7 +91,7 @@ M5 GPU 验收环境需要 RTX 4090、正常 NVIDIA Driver 和 NVIDIA Container T
 python3 -m venv .venv
 source .venv/bin/activate
 python -m pip install -r backend/requirements-dev.txt
-PYTHONPATH=shared/python uvicorn app.main:app --app-dir backend --reload --port 8000
+PYTHONPATH=shared/python uvicorn app.main:app --app-dir backend --reload --port 8000 --no-access-log
 ```
 
 另开终端启动前端：
@@ -107,7 +109,7 @@ npm run dev
 ```bash
 python -m pip install --index-url https://download.pytorch.org/whl/cu130 -r ai-worker/requirements-gpu.txt
 python -m pip install -r ai-worker/requirements-dev.txt
-PYTHONPATH=shared/python uvicorn app.main:app --app-dir ai-worker --reload --port 8080
+PYTHONPATH=shared/python uvicorn app.main:app --app-dir ai-worker --reload --port 8080 --no-access-log
 ```
 
 ### 配置 EZVIZ
@@ -147,7 +149,7 @@ M4 API：
 M5 内部媒体 API（仅 AI Worker Bearer 鉴权）：
 
 - `GET /internal/media/devices`：Worker 查询标准化在线设备。
-- `GET /internal/media/devices/{device_serial}/stream`：运行时签发临时 HLS；不供浏览器和第三方调用。
+- `GET /internal/media/devices/{device_serial}/stream`：运行时签发临时 HTTP-FLV；不供浏览器和第三方调用。
 
 播放地址属于临时敏感资源，仅由 Backend 运行时获取并交给播放器，不写入 `.env`、数据库、日志、测试 fixture 或文档。媒体诊断 API 不返回播放地址。
 
@@ -252,9 +254,9 @@ python3 scripts/probe_ezviz_stream.py
 - `/monitor` 使用官方 `ezuikit-js` 的 EZOPEN 播放器，浏览器不再通过标准 HLS 预览。
 - 首帧事件直接驱动 `LIVE` 并记录本次连接首帧耗时，移除遮挡控制区的人工确认按钮。
 - EZOPEN 会话显式启用、响应禁止缓存，播放 URL 与 Token 不持久化、不写日志。
-- HLS 仍只服务于 Backend ffprobe 和 AI Worker，M5 跌倒检测输入链保持不变。
+- 标准 HLS 仅保留给 Backend ffprobe；AI Worker 改用低延迟 HTTP-FLV，浏览器继续使用 EZOPEN。实际端到端延迟以真实运行验收为准。
 - `ezuikit-js` 9.0.19 用于官方 EZOPEN Web 播放，许可证为 ISC；其解码静态资源在构建时从 npm 安装目录复制，不提交 Git。
-- 当前实测 AI HLS 追到流尾后约有 6.2 秒媒体延迟；约 4 ms 的模型推理耗时不代表完整端到端延迟，后续实时告警阶段仍需优化媒体输入。
+- 旧 AI HLS 追到流尾后约有 6.2 秒媒体延迟；M5.2 的 HTTP-FLV 必须以本次真实连续运行验收重新记录端到端延迟。
 
 ## M4 当前已完成内容
 
@@ -268,12 +270,16 @@ python3 scripts/probe_ezviz_stream.py
 
 架构、契约与安全策略见 [docs/ai-realtime-pipeline.md](docs/ai-realtime-pipeline.md)。
 
-## M5 当前已完成内容
+## M5.2 当前实现内容
 
-- AI Worker 通过内部鉴权向 Backend 获取临时 H6c HLS，不持有 EZVIZ Secret
+- AI Worker 通过内部鉴权向 Backend 获取临时 H6c HTTP-FLV，不持有 EZVIZ Secret
 - PyAV/FFmpeg 解码、可配置采样和自动重新获取临时地址
-- YOLO26n-pose CUDA 推理与 CareShield 标准 Pose Schema
-- 归一化姿态特征、持续时间状态机和明确的 heuristic score
+- YOLO26m-pose CUDA 姿态推理、YOLO26s 独立人物检测与 CareShield 标准 Pose Schema
+- IoU/中心距离多人跟踪；按人物维护 2 秒真实观测并线性重采样为 75 个模型位置，模型内部预测后续 25 帧（插值不制造新证据）
+- 跌倒告警锁存、人工确认，以及 Redis 中去重且自动过期的最近状态历史
+- 复用论文工程 STGCN-Extend 的姿态预测器和二分类器；权重严格加载并报告 SHA-256
+- 模型 softmax 分数经多窗口防抖产生 `NORMAL / SUSPECTED_FALL / FALLEN / RECOVERING`，不声称是校准概率
+- `/fall-detection` 展示 AI Worker 同一推理帧上的人物框和骨架；跌倒时显示独立红色提示
 - `fall_detection` 真实结果固定 `simulated=false`，无人/故障不显示 Normal
 - `/fall-detection` 真实 Worker/GPU/模型/状态/性能页面
 - Dashboard 仅更新真实跌倒检测；跌倒风险和诈骗风险仍保持未接入
@@ -282,4 +288,4 @@ python3 scripts/probe_ezviz_stream.py
 
 ## 尚未实现
 
-RTMP/HTTP-FLV、PTZ、截图、云录像、历史回放、双向语音、设备事件、ASR、跌倒风险评估、诈骗识别、正式事件/告警、用户系统、业务数据库表和 Nginx 访问链路均未实现。M5 跌倒检测只是工程 baseline，未经过临床验证；M4 pipeline test 仍只是明确标记的传输诊断。
+RTMP、PTZ、截图、云录像、历史回放、双向语音、设备事件、ASR、跌倒风险评估、诈骗识别、正式事件/短信告警、用户系统、业务数据库表和 Nginx 访问链路均未实现。M5.2 跌倒检测只是研究工程 baseline，训练集规模与泛化验证有限，未经过临床验证；M4 pipeline test 仍只是明确标记的传输诊断。

@@ -12,6 +12,8 @@ class RealtimeStore:
 
     WORKER_PREFIX = "ai:worker:"
     LATEST_PREFIX = "ai:latest:"
+    HISTORY_KEY = "ai:history:fall_detection"
+    HISTORY_LIMIT = 100
 
     def __init__(self, settings: AiRealtimeSettings) -> None:
         self._settings = settings
@@ -56,6 +58,32 @@ class RealtimeStore:
     ) -> AlgorithmResult | None:
         payload = await self._redis.get(self._latest_key(task, device_id))
         return AlgorithmResult.model_validate_json(payload) if payload else None
+
+    async def append_fall_history(self, result: AlgorithmResult) -> None:
+        """Keep meaningful, non-simulated state changes for operator review."""
+        if result.simulated or result.task.value != "fall_detection":
+            return
+        previous_payload = await self._redis.lindex(self.HISTORY_KEY, 0)
+        if previous_payload:
+            previous = AlgorithmResult.model_validate_json(previous_payload)
+            previous_alert = previous.metadata.get("alert_active")
+            current_alert = result.metadata.get("alert_active")
+            if previous.label == result.label and previous_alert == current_alert:
+                return
+        await self._redis.lpush(self.HISTORY_KEY, result.model_dump_json())
+        await self._redis.ltrim(self.HISTORY_KEY, 0, self.HISTORY_LIMIT - 1)
+        await self._redis.expire(
+            self.HISTORY_KEY,
+            self._settings.latest_result_ttl_seconds,
+        )
+
+    async def get_fall_history(self, limit: int = 20) -> list[AlgorithmResult]:
+        payloads = await self._redis.lrange(
+            self.HISTORY_KEY,
+            0,
+            min(max(limit, 1), self.HISTORY_LIMIT) - 1,
+        )
+        return [AlgorithmResult.model_validate_json(payload) for payload in payloads]
 
     async def close(self) -> None:
         await self._redis.aclose()

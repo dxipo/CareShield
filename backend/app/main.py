@@ -5,6 +5,7 @@ from fastapi import FastAPI
 from app.api.algorithms import router as algorithms_router
 from app.api.dependencies import close_ai_realtime_service, close_device_service
 from app.api.devices import router as devices_router
+from app.api.fall_detection import router as fall_detection_router
 from app.api.health import router as health_router
 from app.api.internal_ai import router as internal_ai_router
 from app.api.internal_media import router as internal_media_router
@@ -27,6 +28,7 @@ app = FastAPI(
 )
 app.include_router(health_router, prefix="/api")
 app.include_router(devices_router, prefix="/api")
+app.include_router(fall_detection_router, prefix="/api")
 app.include_router(streams_router, prefix="/api")
 app.include_router(integrations_router, prefix="/api")
 app.include_router(algorithms_router, prefix="/api")
