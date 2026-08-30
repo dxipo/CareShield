@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+from collections.abc import AsyncIterable
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from uuid import UUID, uuid4
@@ -12,6 +13,7 @@ from careshield_contracts import (
     AssessmentStatus,
     FallRiskAssessment,
     FallRiskAssessmentCreate,
+    FallRiskVideoAssessmentCreate,
     FallRiskWorkerStatus,
     PipelineState,
     PipelineStatus,
@@ -44,8 +46,13 @@ class RiskModelInputError(RuntimeError):
     pass
 
 
+class VideoUploadError(RuntimeError):
+    pass
+
+
 class FallRiskAssessmentService:
     HMR2_CHECKPOINT_SIZE = 2_709_494_041
+    MAX_VIDEO_BYTES = 512 * 1024 * 1024
 
     def __init__(self, settings: FallRiskWorkerSettings) -> None:
         self.settings = settings
@@ -124,47 +131,117 @@ class FallRiskAssessmentService:
         if self._active_task is not None and not self._active_task.done():
             raise AssessmentBusyError("Another fall-risk assessment is already running")
         await self.motionclip.refresh_health()
-
-        now = datetime.now(timezone.utc)
-        assessment = FallRiskAssessment(
-            assessment_id=uuid4(),
-            status=AssessmentStatus.QUEUED,
-            stage="等待采集",
-            device_id=request.device_id,
+        assessment = self._new_assessment(
             height_cm=request.height_cm,
-            capture_duration_seconds=request.capture_duration_seconds,
-            created_at=now,
-            gait_pipeline=PipelineState(status=PipelineStatus.WAITING),
-            gvhmr_pipeline=PipelineState(
-                status=(
-                    PipelineStatus.WAITING
-                    if self._gvhmr_ready()
-                    else PipelineStatus.NOT_CONFIGURED
-                ),
-                message=(None if self._gvhmr_ready() else "授权人体模型或 GVHMR 环境未就绪"),
-            ),
-            risk_pipeline=PipelineState(
-                status=(
-                    PipelineStatus.WAITING
-                    if self._gvhmr_ready() and self.motionclip.ready
-                    else PipelineStatus.NOT_CONFIGURED
-                ),
-                message=(
-                    None
-                    if self._gvhmr_ready() and self.motionclip.ready
-                    else "MotionCLIP 需要可用的 GVHMR 参数与独立模型 Worker"
-                ),
-            ),
-            risk_model_status=(
-                "waiting"
-                if self._gvhmr_ready() and self.motionclip.ready
-                else "not_configured"
-            ),
+            duration_seconds=request.capture_duration_seconds,
+            device_id=request.device_id,
+            input_source="camera",
         )
         await self.store.save(assessment)
         self._active_id = assessment.assessment_id
         self._active_task = asyncio.create_task(self._run(assessment), name="fall-risk-assessment")
         return assessment
+
+    async def create_from_video(
+        self,
+        request: FallRiskVideoAssessmentCreate,
+        chunks: AsyncIterable[bytes],
+        content_length: int | None,
+    ) -> FallRiskAssessment:
+        if not self._visionmd_ready():
+            raise WorkerNotReadyError("VisionMD-Gait runtime is not configured")
+        if self._active_task is not None and not self._active_task.done():
+            raise AssessmentBusyError("Another fall-risk assessment is already running")
+        if content_length is not None and content_length > self.MAX_VIDEO_BYTES:
+            raise VideoUploadError("Video upload exceeds the 512 MB limit")
+        await self.motionclip.refresh_health()
+        safe_filename = Path(request.source_filename).name.replace("\n", " ").replace("\r", " ")
+        if not safe_filename.lower().endswith(".mp4"):
+            raise VideoUploadError("Only MP4 video uploads are supported")
+        assessment = self._new_assessment(
+            height_cm=request.height_cm,
+            duration_seconds=request.capture_duration_seconds,
+            device_id=None,
+            input_source="uploaded_video",
+            source_filename=safe_filename,
+        ).model_copy(
+            update={
+                "status": AssessmentStatus.CAPTURING,
+                "stage": "上传评估视频",
+                "progress": 0.03,
+                "started_at": datetime.now(timezone.utc),
+                "capture_started_at": datetime.now(timezone.utc),
+            }
+        )
+        await self.store.save(assessment)
+        self._active_id = assessment.assessment_id
+        directory = self.store.directory(assessment.assessment_id)
+        source = directory / "source.mp4"
+        temporary = directory / "source.mp4.upload"
+        received = 0
+        try:
+            with temporary.open("wb") as destination:
+                async for chunk in chunks:
+                    if not chunk:
+                        continue
+                    received += len(chunk)
+                    if received > self.MAX_VIDEO_BYTES:
+                        raise VideoUploadError("Video upload exceeds the 512 MB limit")
+                    destination.write(chunk)
+            if received == 0:
+                raise VideoUploadError("Uploaded video is empty")
+            await validate_video_capture(temporary)
+            temporary.replace(source)
+        except Exception as exc:
+            temporary.unlink(missing_ok=True)
+            safe_error = str(exc) if isinstance(exc, (VideoUploadError, MediaIntegrityError)) else "Video upload failed"
+            assessment = assessment.model_copy(
+                update={
+                    "status": AssessmentStatus.FAILED,
+                    "stage": "视频导入失败",
+                    "completed_at": datetime.now(timezone.utc),
+                    "error": safe_error,
+                }
+            )
+            await self.store.save(assessment)
+            self._active_id = None
+            raise VideoUploadError(safe_error) from exc
+        self._active_task = asyncio.create_task(self._run(assessment), name="fall-risk-video-assessment")
+        return assessment
+
+    def _new_assessment(
+        self,
+        *,
+        height_cm: float,
+        duration_seconds: int,
+        device_id: str | None,
+        input_source: str,
+        source_filename: str | None = None,
+    ) -> FallRiskAssessment:
+        now = datetime.now(timezone.utc)
+        gvhmr_ready = self._gvhmr_ready()
+        risk_ready = gvhmr_ready and self.motionclip.ready
+        return FallRiskAssessment(
+            assessment_id=uuid4(),
+            status=AssessmentStatus.QUEUED,
+            stage="等待采集" if input_source == "camera" else "等待视频导入",
+            device_id=device_id,
+            input_source=input_source,
+            source_filename=source_filename,
+            height_cm=height_cm,
+            capture_duration_seconds=duration_seconds,
+            created_at=now,
+            gait_pipeline=PipelineState(status=PipelineStatus.WAITING),
+            gvhmr_pipeline=PipelineState(
+                status=PipelineStatus.WAITING if gvhmr_ready else PipelineStatus.NOT_CONFIGURED,
+                message=None if gvhmr_ready else "授权人体模型或 GVHMR 环境未就绪",
+            ),
+            risk_pipeline=PipelineState(
+                status=PipelineStatus.WAITING if risk_ready else PipelineStatus.NOT_CONFIGURED,
+                message=None if risk_ready else "MotionCLIP 需要可用的 GVHMR 参数与独立模型 Worker",
+            ),
+            risk_model_status="waiting" if risk_ready else "not_configured",
+        )
 
     async def close(self) -> None:
         if self._active_task is not None:
@@ -183,7 +260,9 @@ class FallRiskAssessmentService:
         if not any(item.artifact_id == artifact_id for item in assessment.artifacts):
             raise AssessmentArtifactNotFoundError("Assessment artifact not found")
         directory = self.store.directory(assessment_id)
-        if artifact_id == "gait-overlay":
+        if artifact_id == "source-video":
+            candidate = directory / "source.mp4"
+        elif artifact_id == "gait-overlay":
             candidate = directory / "visionmd" / "visionmd_overlay.mp4"
         elif artifact_id == "gvhmr-incamera":
             matches = list((directory / "gvhmr").rglob("1_incam.mp4"))
@@ -249,37 +328,51 @@ class FallRiskAssessmentService:
 
     async def _run(self, assessment: FallRiskAssessment) -> None:
         try:
-            assessment = assessment.model_copy(
-                update={
-                    "status": AssessmentStatus.CAPTURING,
-                    "stage": "按触发时刻采集步态视频",
-                    "progress": 0.05,
-                    "started_at": datetime.now(timezone.utc),
-                    "capture_started_at": assessment.created_at,
-                }
-            )
-            await self.store.save(assessment)
-            device = await self.media.select_device(assessment.device_id)
             directory = self.store.directory(assessment.assessment_id)
             source = directory / "source.mp4"
-            if self.recordings is not None:
-                await self.recordings.capture(
-                    source,
-                    triggered_at=assessment.created_at,
-                    duration_seconds=assessment.capture_duration_seconds,
+            if assessment.input_source == "camera":
+                assessment = assessment.model_copy(
+                    update={
+                        "status": AssessmentStatus.CAPTURING,
+                        "stage": "按触发时刻采集步态视频",
+                        "progress": 0.05,
+                        "started_at": datetime.now(timezone.utc),
+                        "capture_started_at": assessment.created_at,
+                    }
+                )
+                await self.store.save(assessment)
+                device = await self.media.select_device(assessment.device_id)
+                if self.recordings is not None:
+                    await self.recordings.capture(
+                        source,
+                        triggered_at=assessment.created_at,
+                        duration_seconds=assessment.capture_duration_seconds,
+                    )
+                else:
+                    stream = await self.media.get_stream(device)
+                    await capture_video(
+                        stream.playback_url,
+                        source,
+                        assessment.capture_duration_seconds,
+                    )
+                await validate_video_capture(source)
+                device_id = device.id
+                capture_completed_at = assessment.created_at + timedelta(
+                    seconds=assessment.capture_duration_seconds
                 )
             else:
-                stream = await self.media.get_stream(device)
-                await capture_video(
-                    stream.playback_url,
-                    source,
-                    assessment.capture_duration_seconds,
-                )
-            await validate_video_capture(source)
+                if not source.is_file():
+                    raise MediaIntegrityError("Uploaded video is unavailable")
+                device_id = None
+                capture_completed_at = datetime.now(timezone.utc)
             source_artifact = AssessmentArtifact(
                 artifact_id="source-video",
                 kind="source_video",
-                label="本次评估采集视频",
+                label=(
+                    "本次评估采集视频"
+                    if assessment.input_source == "camera"
+                    else "本次评估上传视频"
+                ),
                 media_type="video/mp4",
             )
 
@@ -287,12 +380,11 @@ class FallRiskAssessmentService:
             processing_started_at = datetime.now(timezone.utc)
             assessment = assessment.model_copy(
                 update={
-                    "device_id": device.id,
+                    "device_id": device_id,
                     "status": AssessmentStatus.PROCESSING_GAIT,
                     "stage": "计算步态事件与 28 项参数",
                     "progress": 0.30,
-                    "capture_completed_at": assessment.created_at
-                    + timedelta(seconds=assessment.capture_duration_seconds),
+                    "capture_completed_at": capture_completed_at,
                     "processing_started_at": processing_started_at,
                     "gait_pipeline": PipelineState(status=PipelineStatus.RUNNING, progress=0.1),
                     "artifacts": [source_artifact],
@@ -309,6 +401,11 @@ class FallRiskAssessmentService:
                 ]
             )
             parameters, quality = self._load_gait_results(gait_output)
+            analysis_source = gait_output / "analysis_clip.mp4"
+            if not analysis_source.is_file():
+                raise PipelineExecutionError(
+                    "VisionMD-Gait completed without a selected analysis clip"
+                )
             gait_artifacts = self._visionmd_artifacts(gait_output)
             assessment = assessment.model_copy(
                 update={
@@ -328,7 +425,6 @@ class FallRiskAssessmentService:
                         "stage": "人体姿态质量不足，请重新采集",
                         "progress": 1.0,
                         "completed_at": datetime.now(timezone.utc),
-                        "gait_parameters": [],
                         "gvhmr_pipeline": PipelineState(
                             status=PipelineStatus.SKIPPED,
                             message="输入姿态质量不足，未运行 GVHMR / SMPL-X",
@@ -337,6 +433,7 @@ class FallRiskAssessmentService:
                             status=PipelineStatus.SKIPPED,
                             message="输入姿态质量不足，未运行 MotionCLIP",
                         ),
+                        "risk_model_status": "skipped",
                     }
                 )
                 await self.store.save(assessment)
@@ -353,7 +450,9 @@ class FallRiskAssessmentService:
                 )
                 await self.store.save(assessment)
                 gvhmr_output = directory / "gvhmr"
-                await self.gvhmr.run([str(source), "--output", str(gvhmr_output)])
+                await self.gvhmr.run(
+                    [str(analysis_source), "--output", str(gvhmr_output)]
+                )
                 assessment = assessment.model_copy(
                     update={
                         "gvhmr_pipeline": PipelineState(status=PipelineStatus.COMPLETED, progress=1.0),
@@ -511,11 +610,25 @@ class FallRiskAssessmentService:
         full_body_visible_ratio = raw_quality.get("full_body_visible_ratio")
         interpolated_frame_ratio = raw_quality.get("interpolated_frame_ratio")
         maximum_missing_gap = raw_quality.get("maximum_missing_gap_frames")
+        maximum_missing_gap_seconds = raw_quality.get("maximum_missing_gap_seconds")
         video_duration = raw_quality.get("video_duration_seconds")
+        original_video_duration = raw_quality.get("original_video_duration_seconds")
+        selected_start = raw_quality.get("selected_start_seconds")
+        selected_end = raw_quality.get("selected_end_seconds")
+        discarded_duration = raw_quality.get("discarded_duration_seconds")
         if isinstance(pose_valid_ratio, (int, float)) and pose_valid_ratio < 0.8:
             reasons.append("有效人体姿态帧比例低于 80%")
         if isinstance(full_body_visible_ratio, (int, float)) and full_body_visible_ratio < 0.8:
             reasons.append("全身完整可见帧比例低于 80%")
+        if isinstance(interpolated_frame_ratio, (int, float)) and interpolated_frame_ratio > 0.2:
+            reasons.append("分析片段插值帧比例超过 20%")
+        if (
+            isinstance(maximum_missing_gap_seconds, (int, float))
+            and maximum_missing_gap_seconds > 1.0
+        ):
+            reasons.append(
+                f"分析片段连续姿态缺失 {maximum_missing_gap_seconds:.2f} 秒，超过 1.00 秒"
+            )
         quality = AssessmentQuality(
             passed=complete_steps >= 6 and unavailable_count == 0 and not reasons,
             source_fps=(
@@ -526,6 +639,26 @@ class FallRiskAssessmentService:
             video_duration_seconds=(
                 float(video_duration)
                 if isinstance(video_duration, (int, float))
+                else None
+            ),
+            original_video_duration_seconds=(
+                float(original_video_duration)
+                if isinstance(original_video_duration, (int, float))
+                else None
+            ),
+            selected_start_seconds=(
+                float(selected_start)
+                if isinstance(selected_start, (int, float))
+                else None
+            ),
+            selected_end_seconds=(
+                float(selected_end)
+                if isinstance(selected_end, (int, float))
+                else None
+            ),
+            discarded_duration_seconds=(
+                float(discarded_duration)
+                if isinstance(discarded_duration, (int, float))
                 else None
             ),
             full_body_visible_ratio=(
@@ -548,6 +681,17 @@ class FallRiskAssessmentService:
                 if isinstance(maximum_missing_gap, int)
                 else None
             ),
+            maximum_missing_gap_seconds=(
+                float(maximum_missing_gap_seconds)
+                if isinstance(maximum_missing_gap_seconds, (int, float))
+                else (
+                    float(maximum_missing_gap / parameter_payload["fps"])
+                    if isinstance(maximum_missing_gap, int)
+                    and isinstance(parameter_payload.get("fps"), (int, float))
+                    and parameter_payload["fps"] > 0
+                    else None
+                )
+            ),
             heel_strike_count=hs_count,
             toe_off_count=to_count,
             complete_step_count=complete_steps,
@@ -565,7 +709,8 @@ class FallRiskAssessmentService:
             and quality.interpolated_frame_ratio is not None
             and quality.interpolated_frame_ratio <= 0.2
             and quality.maximum_missing_gap_frames is not None
-            and quality.maximum_missing_gap_frames <= 15
+            and quality.maximum_missing_gap_seconds is not None
+            and quality.maximum_missing_gap_seconds <= 1.0
         )
 
     @staticmethod

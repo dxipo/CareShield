@@ -28,11 +28,16 @@ export interface GaitParameterValue {
 export interface AssessmentQuality {
   passed: boolean
   video_duration_seconds: number | null
+  original_video_duration_seconds: number | null
+  selected_start_seconds: number | null
+  selected_end_seconds: number | null
+  discarded_duration_seconds: number | null
   source_fps: number | null
   full_body_visible_ratio: number | null
   pose_valid_ratio: number | null
   interpolated_frame_ratio: number | null
   maximum_missing_gap_frames: number | null
+  maximum_missing_gap_seconds: number | null
   heel_strike_count: number | null
   toe_off_count: number | null
   complete_step_count: number | null
@@ -45,6 +50,8 @@ export interface FallRiskAssessment {
   stage: string
   progress: number
   device_id: string | null
+  input_source: 'camera' | 'uploaded_video'
+  source_filename: string | null
   height_cm: number
   capture_duration_seconds: number
   created_at: string
@@ -65,7 +72,7 @@ export interface FallRiskAssessment {
     media_type: string
     available: boolean
   }>
-  risk_model_status: 'not_installed' | 'not_configured' | 'waiting' | 'running' | 'completed' | 'failed'
+  risk_model_status: 'not_installed' | 'not_configured' | 'waiting' | 'running' | 'completed' | 'failed' | 'skipped'
   risk_result: FallRiskModelResult | null
   error: string | null
 }
@@ -148,6 +155,24 @@ export function createFallRiskAssessment(
       capture_duration_seconds: durationSeconds,
       device_id: null,
     }),
+  })
+}
+
+export function createFallRiskVideoAssessment(
+  file: File,
+  heightCm: number,
+  durationSeconds: number,
+  signal?: AbortSignal,
+): Promise<FallRiskAssessment> {
+  const query = new URLSearchParams({
+    height_cm: String(heightCm),
+    capture_duration_seconds: String(durationSeconds),
+    source_filename: file.name,
+  })
+  return requestJson(`/api/fall-risk/assessments/upload?${query}`, signal, {
+    method: 'POST',
+    headers: { 'Content-Type': 'video/mp4' },
+    body: file,
   })
 }
 

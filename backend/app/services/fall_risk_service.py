@@ -1,11 +1,13 @@
 from __future__ import annotations
 
+from collections.abc import AsyncIterable
 from uuid import UUID
 
 import httpx
 from careshield_contracts import (
     FallRiskAssessment,
     FallRiskAssessmentCreate,
+    FallRiskVideoAssessmentCreate,
     FallRiskWorkerStatus,
 )
 
@@ -44,6 +46,29 @@ class FallRiskService:
             "POST",
             "/internal/assessments",
             json=request.model_dump(mode="json"),
+        )
+        return FallRiskAssessment.model_validate(response.json())
+
+    async def create_from_video(
+        self,
+        request: FallRiskVideoAssessmentCreate,
+        content: AsyncIterable[bytes],
+        content_length: int | None,
+    ) -> FallRiskAssessment:
+        headers = {"Content-Type": "video/mp4"}
+        if content_length is not None:
+            headers["Content-Length"] = str(content_length)
+        response = await self._request(
+            "POST",
+            "/internal/assessments/upload",
+            params={
+                "height_cm": request.height_cm,
+                "capture_duration_seconds": request.capture_duration_seconds,
+                "source_filename": request.source_filename,
+            },
+            headers=headers,
+            content=content,
+            timeout=120.0,
         )
         return FallRiskAssessment.model_validate(response.json())
 
@@ -99,6 +124,9 @@ class FallRiskService:
                 safe_status = 503
             elif safe_status == 409:
                 message = "A fall-risk assessment is already running"
+            elif safe_status in {400, 413, 415, 422}:
+                message = "The uploaded assessment video is invalid"
+                safe_status = 400
             elif safe_status == 404:
                 message = "Fall-risk assessment was not found"
             elif safe_status == 503:

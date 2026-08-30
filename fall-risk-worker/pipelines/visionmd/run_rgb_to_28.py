@@ -30,6 +30,7 @@ from app.analysis.models.gait_transformer.gait_phase_transformer_old import (  #
 from app.analysis.signal_analyzers.gait_parameters_28 import (  # noqa: E402
     calculate_gait_parameters_28,
 )
+from segment_selection import select_continuous_segment  # noqa: E402
 
 
 JOINT_ORDER = np.array([
@@ -133,14 +134,25 @@ def extract_poses(video_path: Path, detector, batch_size: int):
         & (raw_2d[..., 1] >= 0).all(axis=1)
         & (raw_2d[..., 1] < height).all(axis=1)
     )
-    quality = {
-        "pose_valid_ratio": float(np.mean(valid)),
-        "full_body_visible_ratio": float(np.mean(within_frame)),
-        "interpolated_frame_ratio": float(1.0 - np.mean(valid)),
-        "maximum_missing_gap_frames": _maximum_false_run(valid),
-        "video_duration_seconds": float(len(raw_3d) / fps) if fps > 0 else None,
-    }
-    return _interpolate_missing(raw_3d), _interpolate_missing(raw_2d), fps, quality
+    return raw_3d, raw_2d, valid, within_frame, fps
+
+
+def create_analysis_clip(
+    video_path: Path,
+    output: Path,
+    start_frame: int,
+    end_frame: int,
+) -> None:
+    subprocess.run(
+        [
+            "ffmpeg", "-nostdin", "-hide_banner", "-loglevel", "error", "-y",
+            "-i", str(video_path),
+            "-vf", f"trim=start_frame={start_frame}:end_frame={end_frame},setpts=PTS-STARTPTS",
+            "-an", "-c:v", "libx264", "-preset", "fast", "-crf", "18",
+            "-pix_fmt", "yuv420p", str(output),
+        ],
+        check=True,
+    )
 
 
 def render_overlay(video_path: Path, poses2d: np.ndarray, output: Path, fps: float) -> None:
@@ -222,12 +234,43 @@ def main():
         )
     )
     detector = _load_metrabs(model_dir, args.metrabs_url)
-    poses3d, poses2d, fps, quality = extract_poses(
+    raw_3d, raw_2d, valid, within_frame, fps = extract_poses(
         args.video.resolve(), detector, args.batch_size
     )
+    try:
+        segment = select_continuous_segment(valid, fps)
+    except ValueError as exc:
+        raise InsufficientPoseError(str(exc)) from exc
+    selected_valid = valid[segment.start:segment.end]
+    selected_within_frame = within_frame[segment.start:segment.end]
+    poses3d = _interpolate_missing(raw_3d[segment.start:segment.end])
+    poses2d = _interpolate_missing(raw_2d[segment.start:segment.end])
+    maximum_missing_gap = _maximum_false_run(selected_valid)
+    original_duration = float(len(raw_3d) / fps) if fps > 0 else None
+    selected_duration = float(segment.frame_count / fps) if fps > 0 else None
+    quality = {
+        "pose_valid_ratio": float(np.mean(selected_valid)),
+        "full_body_visible_ratio": float(np.mean(selected_within_frame)),
+        "interpolated_frame_ratio": float(1.0 - np.mean(selected_valid)),
+        "maximum_missing_gap_frames": maximum_missing_gap,
+        "maximum_missing_gap_seconds": (
+            float(maximum_missing_gap / fps) if fps > 0 else None
+        ),
+        "video_duration_seconds": selected_duration,
+        "original_video_duration_seconds": original_duration,
+        "selected_start_seconds": float(segment.start / fps) if fps > 0 else None,
+        "selected_end_seconds": float(segment.end / fps) if fps > 0 else None,
+        "discarded_duration_seconds": (
+            float(original_duration - selected_duration)
+            if original_duration is not None and selected_duration is not None
+            else None
+        ),
+    }
+    analysis_clip = output / "analysis_clip.mp4"
+    create_analysis_clip(args.video.resolve(), analysis_clip, segment.start, segment.end)
     events, phases, stride_signals = infer_events(poses3d, args.height_cm)
     parameters = calculate_gait_parameters_28(events, poses3d, fps, JOINT_ORDER)
-    render_overlay(args.video.resolve(), poses2d, output / "visionmd_overlay.mp4", fps)
+    render_overlay(analysis_clip, poses2d, output / "visionmd_overlay.mp4", fps)
 
     np.savez_compressed(
         output / "visionmd_poses.npz",
@@ -251,6 +294,7 @@ def main():
         "video": str(args.video.resolve()),
         "fps": fps,
         "height_cm": args.height_cm,
+        "analysis_clip": "analysis_clip.mp4",
         "quality": quality,
         "gait_parameters_28": parameters,
     }

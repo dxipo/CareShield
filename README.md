@@ -300,7 +300,9 @@ python3 scripts/probe_ezviz_stream.py
 - MediaMTX 保存 2 分钟短时环形缓冲；M6 按按钮触发的 RFC3339 时间窗截取，不再受 HLS 延迟错位影响
 - 页面显示触发时刻、采集剩余、采集耗时和处理耗时，VisionMD-Gait 与 GVHMR 均通过可替换 CLI Adapter 接入
 - Backend 提供 `/api/fall-risk/status` 和 `/api/fall-risk/assessments` API
-- `/fall-risk` 提供真实采集配置、双链路进度、固定的“MeTRAbs 骨骼 + GVHMR SMPL-X”双视频窗口、28 项参数和质量状态；SMPL-X 默认显示不含原始 RGB 的中性背景隐私替身，并可切换相机叠加诊断；损坏媒体及插值主导结果会被门禁拦截
+- 跌倒风险输入同时支持 H6c 定时采集和 8–60 秒本地 MP4 上传；两种输入复用同一 VisionMD、GVHMR 与 MotionCLIP 管线，上传文件仅保存在本机运行数据卷
+- VisionMD 先剔除首尾无人画面；中间长时间无人时按姿态轨迹拆段并选择有效帧最多的连续片段，短暂漏检才允许插值；质量门限按秒计算，不随源视频 FPS 改变
+- `/fall-risk` 提供真实采集/文件导入、双链路进度、原始视频、MeTRAbs 骨骼、GVHMR SMPL-X、28 项参数和模型结果；历史评估可选择回看，重启后由持久化 manifest 恢复；损坏媒体及插值主导结果会被门禁拦截
 - 官方 GVHMR 源码以固定 commit 的 Git submodule 引入；公开 checkpoint 下载到 Git 忽略的 `models/` 目录
 - VisionMD 独立 TensorFlow 2.17/CUDA runtime 与官方 MeTRAbs SavedModel 已就绪；GPU 工程样例已验证 28/28 参数和骨架处理视频产出
 - 用户授权下载的 SMPL 1.1 neutral 与 SMPL-X 1.1 neutral 资产已按只读模型目录接入；GVHMR 的 PyTorch/CUDA 环境通过 `scripts/bootstrap_gvhmr_runtime.sh` 安装到 Git 忽略的独立 runtime，并挂载给 Worker

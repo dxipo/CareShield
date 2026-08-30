@@ -4,9 +4,10 @@ from uuid import UUID
 from careshield_contracts import (
     FallRiskAssessment,
     FallRiskAssessmentCreate,
+    FallRiskVideoAssessmentCreate,
     FallRiskWorkerStatus,
 )
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import StreamingResponse
 from starlette.background import BackgroundTask
 
@@ -15,6 +16,7 @@ from app.services.fall_risk_service import FallRiskService, FallRiskServiceError
 
 
 router = APIRouter(prefix="/fall-risk", tags=["fall-risk"])
+MAX_VIDEO_BYTES = 512 * 1024 * 1024
 
 
 @router.get("/status", response_model=FallRiskWorkerStatus)
@@ -34,6 +36,32 @@ async def create_assessment(
 ) -> FallRiskAssessment:
     try:
         return await service.create(request)
+    except FallRiskServiceError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
+
+
+@router.post("/assessments/upload", response_model=FallRiskAssessment, status_code=202)
+async def create_video_assessment(
+    request: Request,
+    service: Annotated[FallRiskService, Depends(get_fall_risk_service)],
+    height_cm: Annotated[float, Query(ge=80.0, le=230.0)],
+    capture_duration_seconds: Annotated[int, Query(ge=8, le=60)],
+    source_filename: Annotated[str, Query(min_length=1, max_length=255)],
+) -> FallRiskAssessment:
+    media_type = request.headers.get("content-type", "").partition(";")[0].strip().lower()
+    if media_type != "video/mp4":
+        raise HTTPException(status_code=415, detail="Only MP4 video uploads are supported")
+    raw_length = request.headers.get("content-length")
+    content_length = int(raw_length) if raw_length and raw_length.isdigit() else None
+    if content_length is not None and content_length > MAX_VIDEO_BYTES:
+        raise HTTPException(status_code=413, detail="Video upload exceeds the 512 MB limit")
+    upload = FallRiskVideoAssessmentCreate(
+        height_cm=height_cm,
+        capture_duration_seconds=capture_duration_seconds,
+        source_filename=source_filename,
+    )
+    try:
+        return await service.create_from_video(upload, request.stream(), content_length)
     except FallRiskServiceError as exc:
         raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
 

@@ -4,7 +4,7 @@ from uuid import UUID, uuid4
 
 import httpx
 import pytest
-from careshield_contracts import FallRiskAssessmentCreate
+from careshield_contracts import FallRiskAssessmentCreate, FallRiskVideoAssessmentCreate
 
 from app.core.config import AiRealtimeSettings
 from app.services.fall_risk_service import FallRiskService, FallRiskServiceError
@@ -60,6 +60,40 @@ def test_create_maps_contract_and_keeps_final_risk_unavailable() -> None:
         )
         assert result.risk_model_status == "not_installed"
         assert result.risk_result is None
+        await service.close()
+
+    asyncio.run(run())
+
+
+def test_uploaded_video_is_streamed_to_the_isolated_worker() -> None:
+    async def handler(request: httpx.Request) -> httpx.Response:
+        assert request.headers["authorization"] == "Bearer private-worker-token"
+        assert request.headers["content-type"] == "video/mp4"
+        assert request.url.path == "/internal/assessments/upload"
+        assert request.url.params["source_filename"] == "walking.mp4"
+        assert await request.aread() == b"real-video-bytes"
+        payload = assessment_payload()
+        payload["input_source"] = "uploaded_video"
+        payload["source_filename"] = "walking.mp4"
+        return httpx.Response(202, json=payload)
+
+    async def content():
+        yield b"real-video-"
+        yield b"bytes"
+
+    async def run() -> None:
+        service = FallRiskService(settings(), transport=httpx.MockTransport(handler))
+        result = await service.create_from_video(
+            FallRiskVideoAssessmentCreate(
+                height_cm=170,
+                capture_duration_seconds=38,
+                source_filename="walking.mp4",
+            ),
+            content(),
+            len(b"real-video-bytes"),
+        )
+        assert result.input_source == "uploaded_video"
+        assert result.source_filename == "walking.mp4"
         await service.close()
 
     asyncio.run(run())

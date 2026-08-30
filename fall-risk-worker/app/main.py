@@ -8,9 +8,10 @@ from uuid import UUID
 from careshield_contracts import (
     FallRiskAssessment,
     FallRiskAssessmentCreate,
+    FallRiskVideoAssessmentCreate,
     FallRiskWorkerStatus,
 )
-from fastapi import Depends, FastAPI, Header, HTTPException, Query, status
+from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request, status
 from fastapi.responses import FileResponse
 
 from app.core.config import load_settings
@@ -19,6 +20,7 @@ from app.services.assessment_service import (
     AssessmentBusyError,
     FallRiskAssessmentService,
     RiskModelInputError,
+    VideoUploadError,
     WorkerNotReadyError,
 )
 from app.services.job_store import AssessmentNotFoundError
@@ -76,6 +78,38 @@ async def create_assessment(request: FallRiskAssessmentCreate) -> FallRiskAssess
         raise HTTPException(status_code=503, detail=str(exc)) from exc
     except AssessmentBusyError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+
+@app.post(
+    "/internal/assessments/upload",
+    response_model=FallRiskAssessment,
+    dependencies=[Depends(require_internal_token)],
+    status_code=202,
+)
+async def create_video_assessment(
+    request: Request,
+    height_cm: Annotated[float, Query(ge=80.0, le=230.0)],
+    capture_duration_seconds: Annotated[int, Query(ge=8, le=60)],
+    source_filename: Annotated[str, Query(min_length=1, max_length=255)],
+) -> FallRiskAssessment:
+    media_type = request.headers.get("content-type", "").partition(";")[0].strip().lower()
+    if media_type != "video/mp4":
+        raise HTTPException(status_code=415, detail="Only MP4 video uploads are supported")
+    raw_length = request.headers.get("content-length")
+    content_length = int(raw_length) if raw_length and raw_length.isdigit() else None
+    upload = FallRiskVideoAssessmentCreate(
+        height_cm=height_cm,
+        capture_duration_seconds=capture_duration_seconds,
+        source_filename=source_filename,
+    )
+    try:
+        return await service.create_from_video(upload, request.stream(), content_length)
+    except WorkerNotReadyError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    except AssessmentBusyError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except VideoUploadError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 @app.get(

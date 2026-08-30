@@ -5,9 +5,10 @@
 M6 将既有 `risk_firststage` 的两个研究链路接入 CareShield，但保持运行环境和结果语义隔离：
 
 ```text
-H6c -> Backend internal media API -> fixed-duration assessment clip
-                                      |-> VisionMD-Gait -> MeTRAbs -> Gait Transformer -> HS/TO -> 28 parameters
-                                      `-> GVHMR -> SMPL-X -> world-coordinate 3D skeleton
+H6c timed capture ----\
+                       -> persisted assessment clip
+Browser MP4 upload ---/       |-> VisionMD-Gait -> MeTRAbs -> Gait Transformer -> HS/TO -> 28 parameters
+                              `-> GVHMR -> SMPL-X -> world-coordinate 3D skeleton -> MotionCLIP
 ```
 
 本文件记录 M6 特征基础阶段当时的边界。随后 CARE-PD MotionCLIP 核心模型已按
@@ -28,8 +29,9 @@ Vue -> Backend Fall Risk API -> fall-risk-worker
                                   `-> GVHMR CLI adapter
 ```
 
-Worker 每次只运行一个评估任务，manifest 写入专用 Docker volume。临时播放地址不进入
-manifest、结果合同、Redis 或日志。
+Worker 每次只运行一个评估任务，manifest、原始片段和派生产物写入专用 Docker volume。
+历史 API 从这些 manifest 恢复任务，因而容器重启后仍可回看原始视频、处理视频、步态参数和
+模型结果。临时播放地址不进入 manifest、结果合同、Redis 或日志；用户上传视频也不进入 Git。
 
 实时跌倒检测继续显式请求低延迟 HTTP-FLV；M6 固定时长批处理采集显式请求 HLS。两者共用
 StreamService 合同但不争用同一种实时传输会话，且批处理不需要承担 HTTP-FLV 的低延迟约束。
@@ -126,11 +128,13 @@ torchvision 0.18.0 使用校验过的本地官方 wheel。一次性安装容器�
 另行生成 `1_incam.mp4`（SMPL-X 相机叠加）与 `2_global.mp4`（世界系网格视角），不会
 覆盖或冒充原骨架视频。
 
-`/fall-risk` 固定保留两个并列窗口：左侧只显示 MeTRAbs 骨骼与步态事件视频，右侧只显示
-GVHMR 相机视角 SMPL-X 网格视频。某条链路未完成时对应窗口显示明确 Empty State，不再用
-另一条视频替代。Worker 在算法运行前完整解码采集片段并检查 HEVC 损坏诊断；VisionMD
+`/fall-risk` 独立保留原始评估视频、MeTRAbs 骨骼与步态事件视频、GVHMR SMPL-X 网格视频。
+某条链路未完成时对应窗口显示明确 Empty State，不再用另一条视频替代。页面的历史记录可
+主动切换当前评估，视频、28 项参数和 MotionCLIP 结果均跟随所选记录。Worker 在算法运行前
+完整解码输入片段并检查媒体损坏诊断；VisionMD
 完成后还会检查有效姿态、全身可见、插值占比和最大缺失间隔。损坏视频或插值主导的结果
-不会进入 GVHMR，也不会在页面展示为可信步态参数。
+不会进入 GVHMR。已生成的骨骼视频和可计算步态参数仍作为复核材料保留，页面明确标记
+`Quality Review`；缺失参数保持 `null`，且不会生成 MotionCLIP 风险结论。
 
 右侧 SMPL-X 窗口默认使用 `gvhmr_global` 的中性背景隐私替身，不包含原始 RGB 人脸、服装
 或室内背景；用户可以切换到 `gvhmr_incamera` 检查网格与原人物的相机视角贴合情况。隐私
@@ -207,12 +211,22 @@ TensorFlow 2.17 下对既有 Gait Transformer 做了两处不改变权重语义�
 质量门禁同时记录有效姿态比例、全身可见比例、插值帧比例、最大缺失间隔、有效步数和参数
 缺失数。没有可用完整人体时任务明确失败，不以插值、零值或“正常风险”掩盖。
 
+上传或采集片段可能在人物进入前、离开后包含空画面，也可能在折返之间存在长时间无人区间。
+VisionMD 首先从逐帧有效姿态掩码构建连续轨迹：不超过 0.75 秒的短暂检测丢失保留在同一
+片段内，长空白用于分段，最终选取有效姿态帧最多且至少 2 秒的片段。首尾无人帧不参加质量
+统计或插值，GVHMR 与 MotionCLIP 使用同一裁剪片段。最大连续缺失门限以秒表示（当前
+baseline 为 1.00 秒），避免 15 FPS 与 24 FPS 视频使用相同帧数却产生不同实际门限。
+有效步数少于 6 或部分统计参数不可计算会进入质量复核说明，但与 SMPL-X 输入可用性分开；
+只有姿态连续性不足才阻止 GVHMR/MotionCLIP。该处理不会把多个不连续行走片段拼接成一段，
+避免跨空白插值制造虚假步态。
+
 缺少模型时页面明确显示 Setup Required。
 
 ## Current API
 
 - `GET /api/fall-risk/status`
 - `POST /api/fall-risk/assessments`
+- `POST /api/fall-risk/assessments/upload`（原始 `video/mp4` body，最大 512 MB）
 - `GET /api/fall-risk/assessments`
 - `GET /api/fall-risk/assessments/{assessment_id}`
 - `GET /api/fall-risk/assessments/{assessment_id}/artifacts/{artifact_id}`

@@ -7,7 +7,7 @@ from enum import Enum
 from typing import Literal
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 
 class AssessmentStatus(str, Enum):
@@ -41,6 +41,14 @@ class FallRiskAssessmentCreate(BaseModel):
     device_id: str | None = Field(default=None, max_length=256)
 
 
+class FallRiskVideoAssessmentCreate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    height_cm: float = Field(ge=80.0, le=230.0)
+    capture_duration_seconds: int = Field(ge=8, le=60)
+    source_filename: str = Field(min_length=1, max_length=255)
+
+
 class PipelineState(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -66,11 +74,16 @@ class AssessmentQuality(BaseModel):
 
     passed: bool = False
     video_duration_seconds: float | None = Field(default=None, ge=0.0)
+    original_video_duration_seconds: float | None = Field(default=None, ge=0.0)
+    selected_start_seconds: float | None = Field(default=None, ge=0.0)
+    selected_end_seconds: float | None = Field(default=None, ge=0.0)
+    discarded_duration_seconds: float | None = Field(default=None, ge=0.0)
     source_fps: float | None = Field(default=None, ge=0.0)
     full_body_visible_ratio: float | None = Field(default=None, ge=0.0, le=1.0)
     pose_valid_ratio: float | None = Field(default=None, ge=0.0, le=1.0)
     interpolated_frame_ratio: float | None = Field(default=None, ge=0.0, le=1.0)
     maximum_missing_gap_frames: int | None = Field(default=None, ge=0)
+    maximum_missing_gap_seconds: float | None = Field(default=None, ge=0.0)
     heel_strike_count: int | None = Field(default=None, ge=0)
     toe_off_count: int | None = Field(default=None, ge=0)
     complete_step_count: int | None = Field(default=None, ge=0)
@@ -143,6 +156,8 @@ class FallRiskAssessment(BaseModel):
     stage: str = Field(min_length=1, max_length=120)
     progress: float = Field(default=0.0, ge=0.0, le=1.0)
     device_id: str | None = Field(default=None, max_length=256)
+    input_source: Literal["camera", "uploaded_video"] = "camera"
+    source_filename: str | None = Field(default=None, max_length=255)
     height_cm: float = Field(ge=80.0, le=230.0)
     capture_duration_seconds: int = Field(ge=8, le=60)
     created_at: datetime
@@ -160,10 +175,21 @@ class FallRiskAssessment(BaseModel):
     gait_parameters: list[GaitParameterValue] = Field(default_factory=list)
     artifacts: list[AssessmentArtifact] = Field(default_factory=list)
     risk_model_status: Literal[
-        "not_installed", "not_configured", "waiting", "running", "completed", "failed"
+        "not_installed", "not_configured", "waiting", "running", "completed", "failed", "skipped"
     ] = "not_installed"
     risk_result: FallRiskModelResult | None = None
     error: str | None = Field(default=None, max_length=500)
+
+    @model_validator(mode="after")
+    def skipped_pipeline_is_not_left_waiting(self) -> "FallRiskAssessment":
+        # Backward-compatible normalization for manifests created before the
+        # explicit skipped model state was added.
+        if (
+            self.risk_pipeline.status is PipelineStatus.SKIPPED
+            and self.risk_model_status == "waiting"
+        ):
+            self.risk_model_status = "skipped"
+        return self
 
     @field_validator(
         "created_at",

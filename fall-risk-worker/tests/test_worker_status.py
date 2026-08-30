@@ -117,6 +117,43 @@ def test_only_declared_processed_artifact_is_resolved(tmp_path: Path) -> None:
     asyncio.run(run())
 
 
+def test_declared_source_video_is_retained_for_history_playback(tmp_path: Path) -> None:
+    async def run() -> None:
+        service = FallRiskAssessmentService(settings(tmp_path))
+        assessment_id = uuid4()
+        source = service.store.directory(assessment_id) / "source.mp4"
+        source.parent.mkdir(parents=True)
+        source.write_bytes(b"video")
+        assessment = FallRiskAssessment(
+            assessment_id=assessment_id,
+            status="completed",
+            stage="complete",
+            progress=1,
+            input_source="uploaded_video",
+            source_filename="walking.mp4",
+            height_cm=170,
+            capture_duration_seconds=38,
+            created_at=datetime.now(timezone.utc),
+            gait_pipeline=PipelineState(status="completed"),
+            gvhmr_pipeline=PipelineState(status="completed"),
+            artifacts=[
+                AssessmentArtifact(
+                    artifact_id="source-video",
+                    kind="source_video",
+                    label="source",
+                    media_type="video/mp4",
+                )
+            ],
+        )
+        await service.store.save(assessment)
+        assert await service.artifact_path(assessment_id, "source-video") == source
+        reloaded = (await service.store.list())[0]
+        assert reloaded.source_filename == "walking.mp4"
+        await service.close()
+
+    asyncio.run(run())
+
+
 def test_pose_quality_exit_code_has_actionable_safe_error(tmp_path: Path) -> None:
     pipeline = CommandPipeline("VisionMD-Gait", "/runtime/python", tmp_path / "runner", tmp_path)
     assert "usable full-body walking" in pipeline.failure_message(20)
@@ -152,6 +189,19 @@ def test_pose_quality_gate_accepts_observable_person() -> None:
         full_body_visible_ratio=0.9,
         interpolated_frame_ratio=0.05,
         maximum_missing_gap_frames=3,
+        maximum_missing_gap_seconds=0.1,
+    )
+
+    assert FallRiskAssessmentService._pose_quality_usable(quality) is True
+
+
+def test_pose_quality_gate_uses_time_instead_of_source_frame_count() -> None:
+    quality = AssessmentQuality(
+        pose_valid_ratio=0.95,
+        full_body_visible_ratio=0.9,
+        interpolated_frame_ratio=0.05,
+        maximum_missing_gap_frames=20,
+        maximum_missing_gap_seconds=20 / 24,
     )
 
     assert FallRiskAssessmentService._pose_quality_usable(quality) is True
