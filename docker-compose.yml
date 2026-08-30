@@ -24,6 +24,7 @@ services:
       AI_WORKER_TTL_SECONDS: ${AI_WORKER_TTL_SECONDS:-30}
       AI_LATEST_RESULT_TTL_SECONDS: ${AI_LATEST_RESULT_TTL_SECONDS:-3600}
       AI_WORKER_INTERNAL_URL: http://ai-worker:8080
+      FALL_RISK_WORKER_INTERNAL_URL: http://fall-risk-worker:8090
       EZVIZ_APP_KEY: ${EZVIZ_APP_KEY:-}
       EZVIZ_APP_SECRET: ${EZVIZ_APP_SECRET:-}
       EZVIZ_API_BASE_URL: ${EZVIZ_API_BASE_URL:-https://open.ys7.com}
@@ -58,6 +59,7 @@ services:
     environment:
       APP_ENV: ${APP_ENV:-development}
       BACKEND_INTERNAL_URL: http://backend:8000
+      MEDIA_RELAY_INTERNAL_URL: http://media-relay:8095
       AI_WORKER_SHARED_TOKEN: ${AI_WORKER_SHARED_TOKEN:?Set AI_WORKER_SHARED_TOKEN in .env}
       AI_WORKER_ID: ${AI_WORKER_ID:-careshield-worker-1}
       AI_WORKER_VERSION: ${AI_WORKER_VERSION:-0.5.0}
@@ -94,6 +96,8 @@ services:
     depends_on:
       backend:
         condition: service_healthy
+      media-relay:
+        condition: service_healthy
     healthcheck:
       test:
         [
@@ -101,6 +105,128 @@ services:
           "python",
           "-c",
           "import urllib.request; urllib.request.urlopen('http://localhost:8080/health')",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 5s
+    restart: unless-stopped
+
+  fall-risk-worker:
+    build:
+      context: .
+      dockerfile: fall-risk-worker/Dockerfile
+      args:
+        PIP_INDEX_URL: ${PIP_INDEX_URL:-https://pypi.org/simple}
+    environment:
+      BACKEND_INTERNAL_URL: http://backend:8000
+      MEDIA_RELAY_INTERNAL_URL: http://media-relay:8095
+      MEDIA_RELAY_PLAYBACK_URL: http://media-server:9996
+      AI_WORKER_SHARED_TOKEN: ${AI_WORKER_SHARED_TOKEN:?Set AI_WORKER_SHARED_TOKEN in .env}
+      FALL_RISK_WORKER_ID: ${FALL_RISK_WORKER_ID:-careshield-fall-risk-1}
+      FALL_RISK_WORKER_VERSION: ${FALL_RISK_WORKER_VERSION:-0.6.1}
+      AI_WORKER_HEARTBEAT_INTERVAL_SECONDS: ${AI_WORKER_HEARTBEAT_INTERVAL_SECONDS:-10}
+      FALL_RISK_DATA_ROOT: /data/fall-risk
+      FALL_RISK_CHANNEL_NO: ${FALL_RISK_CHANNEL_NO:-1}
+      VISIONMD_PYTHON: /opt/visionmd-env/bin/python
+      VISIONMD_RUNNER: /opt/visionmd-app/run_rgb_to_28.py
+      VISIONMD_PROJECT_ROOT: /opt/visionmd-app
+      VISIONMD_METRABS_MODEL_DIR: /models/fall-risk/visionmd/metrabs_local_s
+      TF_USE_LEGACY_KERAS: "1"
+      GVHMR_PYTHON: /runtime/gvhmr-env/bin/python
+      GVHMR_RUNNER: /opt/careshield/gvhmr/run_gvhmr_world.py
+      GVHMR_PROJECT_ROOT: /opt/gvhmr
+      GVHMR_CHECKPOINTS_ROOT: /models/fall-risk/gvhmr/official-checkpoints
+      GVHMR_BODY_MODELS_ROOT: /models/fall-risk/gvhmr/body_models
+      MOTIONCLIP_INTERNAL_URL: http://motionclip-worker:8091
+    volumes:
+      - ./models/fall-risk:/models/fall-risk:ro
+      - ./models/fall-risk/gvhmr/official-checkpoints:/opt/gvhmr/inputs/checkpoints:ro
+      - ./models/fall-risk/gvhmr/body_models:/opt/gvhmr/inputs/checkpoints/body_models:ro
+      - ./runtime/gvhmr-env:/runtime/gvhmr-env:ro
+      - fall-risk-data:/data/fall-risk
+    gpus: all
+    depends_on:
+      backend:
+        condition: service_healthy
+      media-relay:
+        condition: service_healthy
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://localhost:8090/health')",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 5s
+    restart: unless-stopped
+
+  motionclip-worker:
+    build:
+      context: .
+      dockerfile: motionclip-worker/Dockerfile
+    environment:
+      AI_WORKER_SHARED_TOKEN: ${AI_WORKER_SHARED_TOKEN:?Set AI_WORKER_SHARED_TOKEN in .env}
+      FALL_RISK_DATA_ROOT: /data/fall-risk
+      MOTIONCLIP_CHECKPOINT: /models/motionclip/checkpoint_best.pth.tar
+      MOTIONCLIP_PROFILE: ${MOTIONCLIP_PROFILE:-carepd_four_dataset_explainable}
+      MOTIONCLIP_DEVICE: ${MOTIONCLIP_DEVICE:-auto}
+    volumes:
+      - ${MOTIONCLIP_CHECKPOINT_PATH:-./models/fall-risk/motionclip/checkpoint_best.pth.tar}:/models/motionclip/checkpoint_best.pth.tar:ro
+      - ${MOTIONCLIP_RUNTIME_ROOT:-./runtime/motionclip-env}:/runtime/motionclip:ro
+      - fall-risk-data:/data/fall-risk:ro
+    gpus: all
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import json,urllib.request; assert json.load(urllib.request.urlopen('http://localhost:8091/health'))['ready']",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 90s
+    restart: unless-stopped
+
+  media-server:
+    image: bluenviron/mediamtx:1.20.0
+    volumes:
+      - ./infra/media/mediamtx.yml:/mediamtx.yml:ro
+      - media-recordings:/recordings
+    restart: unless-stopped
+
+  media-relay:
+    build:
+      context: .
+      dockerfile: media-relay/Dockerfile
+      args:
+        PIP_INDEX_URL: ${PIP_INDEX_URL:-https://pypi.org/simple}
+    environment:
+      BACKEND_INTERNAL_URL: http://backend:8000
+      AI_WORKER_SHARED_TOKEN: ${AI_WORKER_SHARED_TOKEN:?Set AI_WORKER_SHARED_TOKEN in .env}
+      MEDIA_RELAY_CHANNEL_NO: ${FALL_CHANNEL_NO:-1}
+      MEDIA_RELAY_PUBLISH_URL: rtsp://media-server:8554/careshield
+      MEDIA_RELAY_READ_URL: rtsp://media-server:8554/careshield
+      MEDIA_RELAY_MEDIA_SERVER_API_URL: http://media-server:9997
+      MEDIA_RELAY_RECONNECT_SECONDS: 3
+    depends_on:
+      backend:
+        condition: service_healthy
+      media-server:
+        condition: service_started
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://localhost:8095/health')",
         ]
       interval: 10s
       timeout: 5s
@@ -140,3 +266,5 @@ services:
 volumes:
   postgres_data:
   redis_data:
+  fall-risk-data:
+  media-recordings:

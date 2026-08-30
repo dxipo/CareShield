@@ -32,3 +32,6 @@ data/*
 !data/README.md
 models/*
 !models/README.md
+fall-risk-worker/vendor/*.whl
+runtime/*
+!runtime/README.md

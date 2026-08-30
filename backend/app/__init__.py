@@ -1,1 +1,1 @@
-"""Elderly AI Safety Platform backend package."""
+"""CareShield backend package."""

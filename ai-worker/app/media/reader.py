@@ -33,11 +33,14 @@ class _PyAvSession:
         try:
             import av
 
+            options = {"rw_timeout": "10000000"}
+            if playback_url.startswith("rtsp://"):
+                options.update({"rtsp_transport": "tcp", "fflags": "nobuffer"})
             self._container = av.open(
                 playback_url,
                 mode="r",
                 timeout=(10.0, 10.0),
-                options={"rw_timeout": "10000000"},
+                options=options,
             )
             video_streams = self._container.streams.video
             if not video_streams:

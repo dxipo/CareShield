@@ -1,5 +1,6 @@
 import asyncio
 import json
+from dataclasses import replace
 
 import httpx
 
@@ -98,5 +99,39 @@ def test_backend_error_does_not_expose_response_or_runtime_url() -> None:
         assert "private.invalid" not in message
         assert "secret" not in message
         assert "502" in message
+
+    asyncio.run(run())
+
+
+def test_worker_prefers_ready_shared_rtsp_relay() -> None:
+    async def run() -> None:
+        requests: list[httpx.Request] = []
+
+        async def handler(request: httpx.Request) -> httpx.Response:
+            requests.append(request)
+            if request.url.host == "relay.test":
+                return httpx.Response(
+                    200,
+                    json={
+                        "ready": True,
+                        "device_id": "safe-device",
+                        "playback_url": "rtsp://media-server:8554/careshield",
+                    },
+                )
+            raise AssertionError("direct stream fallback should not be requested")
+
+        configured = replace(
+            settings(),
+            media_relay_internal_url="http://relay.test",
+        )
+        client = BackendMediaClient(configured, transport=httpx.MockTransport(handler))
+        try:
+            stream = await client.get_stream("TEST-SERIAL")
+        finally:
+            await client.close()
+
+        assert stream.protocol == "rtsp"
+        assert stream.playback_url == "rtsp://media-server:8554/careshield"
+        assert requests[0].headers["authorization"] == "Bearer internal-test-token"
 
     asyncio.run(run())

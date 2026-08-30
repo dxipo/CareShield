@@ -1,0 +1,258 @@
+<script setup lang="ts">
+import { Bell, Refresh, Warning } from '@element-plus/icons-vue'
+import { computed, onMounted, ref } from 'vue'
+
+import { fetchRiskEvents } from '../api/events'
+import EmptyState from '../components/EmptyState.vue'
+import PageHeader from '../components/PageHeader.vue'
+import type { AlgorithmResult } from '../realtime/types'
+
+const events = ref<AlgorithmResult[]>([])
+const loading = ref(true)
+const loadError = ref(false)
+
+const todayCount = computed(() => {
+  const today = new Date().toDateString()
+  return events.value.filter((event) => new Date(event.result_timestamp).toDateString() === today).length
+})
+const latestTime = computed(() => events.value[0]?.result_timestamp ?? null)
+
+function formatTime(value: string | null): string {
+  if (!value) return '--'
+  return new Intl.DateTimeFormat('zh-CN', {
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: false,
+  }).format(new Date(value))
+}
+
+function formatScore(score: number | null): string {
+  return score === null ? 'Unavailable' : score.toFixed(3)
+}
+
+function maskedDevice(deviceId: string | null): string {
+  if (!deviceId) return '未关联设备'
+  if (deviceId.length <= 4) return '设备 ••••'
+  return `设备 ••••${deviceId.slice(-4)}`
+}
+
+async function loadEvents(): Promise<void> {
+  loading.value = true
+  try {
+    events.value = (await fetchRiskEvents(100)).filter(
+      (event) => event.simulated === false && event.task === 'fall_detection' && event.label === 'fallen',
+    )
+    loadError.value = false
+  } catch {
+    loadError.value = true
+  } finally {
+    loading.value = false
+  }
+}
+
+onMounted(() => void loadEvents())
+</script>
+
+<template>
+  <div>
+    <PageHeader
+      eyebrow="RISK EVENT CENTER"
+      title="风险事件"
+      description="集中展示真实算法产生的风险记录。当前接入跌倒检测事件，普通状态变化与模拟测试不会进入事件中心。"
+    >
+      <template #actions>
+        <el-button :icon="Refresh" :loading="loading" @click="loadEvents">刷新事件</el-button>
+      </template>
+    </PageHeader>
+
+    <p class="event-policy">
+      当前为事件记录基线：保存检测发生时间与算法证据，不代表已经完成人工处置、通知或报警闭环。
+    </p>
+
+    <section class="event-summary" aria-label="风险事件概览">
+      <article><span>已记录事件</span><strong>{{ events.length }}</strong><small>仅真实风险结果</small></article>
+      <article><span>今日事件</span><strong>{{ todayCount }}</strong><small>按本地日期统计</small></article>
+      <article class="event-summary__critical"><span>跌倒事件</span><strong>{{ events.length }}</strong><small>Critical</small></article>
+      <article><span>最近发生</span><strong class="event-summary__time">{{ formatTime(latestTime) }}</strong><small>真实检测时间</small></article>
+    </section>
+
+    <section class="panel-card event-list">
+      <div class="panel-card__header">
+        <div><span class="panel-card__kicker">RECORDED EVENTS</span><h2>跌倒风险记录</h2></div>
+        <el-tag effect="plain" type="danger">Real results only</el-tag>
+      </div>
+
+      <p v-if="loadError" class="event-error">风险事件暂时无法读取，请稍后重试。</p>
+      <EmptyState
+        v-else-if="!loading && events.length === 0"
+        title="暂无已保存的跌倒事件"
+        description="新的真实 fallen 结果会自动记录在这里；不会补造已经丢失的历史记录。"
+        :icon="Bell"
+      />
+      <div v-else-if="loading" class="event-loading">正在读取风险事件...</div>
+      <ol v-else>
+        <li v-for="event in events" :key="event.result_id">
+          <span class="event-list__icon"><el-icon :size="21"><Warning /></el-icon></span>
+          <div class="event-list__primary">
+            <div><strong>检测到跌倒</strong><el-tag size="small" type="danger" effect="dark">CRITICAL</el-tag></div>
+            <p>{{ maskedDevice(event.device_id) }} · {{ event.model_id }} / {{ event.model_version }}</p>
+          </div>
+          <div class="event-list__metric">
+            <span>Fall Score</span>
+            <strong>{{ formatScore(event.score) }}</strong>
+            <small>未校准模型分数</small>
+          </div>
+          <time :datetime="event.result_timestamp">{{ formatTime(event.result_timestamp) }}</time>
+        </li>
+      </ol>
+    </section>
+  </div>
+</template>
+
+<style scoped>
+.event-policy {
+  margin: -8px 0 18px;
+  padding: 11px 14px;
+  border: 1px solid #eadbbf;
+  border-radius: 9px;
+  color: #755a2c;
+  background: #fffaf0;
+  font-size: 12px;
+}
+
+.event-summary {
+  display: grid;
+  margin-bottom: 20px;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 16px;
+}
+
+.event-summary article {
+  padding: 18px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-card);
+  background: var(--color-surface);
+  box-shadow: var(--shadow-card);
+}
+
+.event-summary span,
+.event-summary small {
+  display: block;
+  color: var(--color-text-muted);
+  font-size: 11px;
+}
+
+.event-summary strong {
+  display: block;
+  margin: 12px 0 8px;
+  color: var(--color-heading);
+  font-size: 27px;
+}
+
+.event-summary strong.event-summary__time {
+  font-size: 15px;
+  line-height: 1.8;
+}
+
+.event-summary__critical {
+  border-color: #efd0cd !important;
+  background: #fff8f7 !important;
+}
+
+.event-summary__critical strong {
+  color: var(--color-danger);
+}
+
+.event-list ol {
+  margin: 18px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.event-list li {
+  display: grid;
+  align-items: center;
+  padding: 16px 0;
+  grid-template-columns: 46px minmax(240px, 1fr) 130px 180px;
+  gap: 16px;
+  border-bottom: 1px solid var(--color-border-light);
+}
+
+.event-list li:last-child {
+  border-bottom: 0;
+}
+
+.event-list__icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  border-radius: 10px;
+  color: var(--color-danger);
+  background: #faeae8;
+}
+
+.event-list__primary div {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.event-list__primary strong {
+  color: var(--color-heading);
+  font-size: 14px;
+}
+
+.event-list__primary p {
+  margin: 6px 0 0;
+  color: var(--color-text-muted);
+  font-size: 11px;
+}
+
+.event-list__metric span,
+.event-list__metric small {
+  display: block;
+  color: var(--color-text-muted);
+  font-size: 10px;
+}
+
+.event-list__metric strong {
+  display: block;
+  margin: 4px 0;
+  color: var(--color-heading);
+  font-size: 15px;
+}
+
+.event-list time {
+  color: var(--color-text-secondary);
+  font-size: 12px;
+  text-align: right;
+}
+
+.event-loading,
+.event-error {
+  margin: 18px 0 0;
+  padding: 32px;
+  color: var(--color-text-muted);
+  text-align: center;
+}
+
+.event-error {
+  color: var(--color-danger);
+}
+
+@media (max-width: 1366px) {
+  .event-summary {
+    gap: 12px;
+  }
+
+  .event-list li {
+    grid-template-columns: 42px minmax(220px, 1fr) 110px 155px;
+  }
+}
+</style>

@@ -5,7 +5,9 @@ import AppLayout from '../layout/AppLayout.vue'
 const DashboardView = () => import('../views/DashboardView.vue')
 const AlgorithmsView = () => import('../views/AlgorithmsView.vue')
 const DevicesView = () => import('../views/DevicesView.vue')
+const EventsView = () => import('../views/EventsView.vue')
 const FallDetectionView = () => import('../views/FallDetectionView.vue')
+const FallRiskView = () => import('../views/FallRiskView.vue')
 const ModulePlaceholderView = () => import('../views/ModulePlaceholderView.vue')
 const MonitorView = () => import('../views/MonitorView.vue')
 const SystemView = () => import('../views/SystemView.vue')
@@ -42,14 +44,7 @@ const router = createRouter({
         {
           path: 'fall-risk',
           name: 'fall-risk',
-          component: ModulePlaceholderView,
-          props: {
-            title: '跌倒风险',
-            description: '用于未来呈现跌倒风险评估结果与风险变化。',
-            emptyTitle: '跌倒风险模型尚未接入',
-            emptyDescription: '当前阶段不提供评估数值或模拟结果。',
-            iconName: 'trend',
-          },
+          component: FallRiskView,
           meta: {
             title: '跌倒风险',
             subtitle: '跌倒风险评估模块',
@@ -83,14 +78,7 @@ const router = createRouter({
         {
           path: 'events',
           name: 'events',
-          component: ModulePlaceholderView,
-          props: {
-            title: '风险事件',
-            description: '统一查看未来由各风险模块产生的事件记录。',
-            emptyTitle: '暂无风险事件',
-            emptyDescription: '业务事件能力尚未接入。',
-            iconName: 'bell',
-          },
+          component: EventsView,
           meta: {
             title: '风险事件',
             subtitle: '平台风险事件中心',
@@ -133,8 +121,8 @@ const router = createRouter({
 })
 
 router.afterEach((to) => {
-  const title = typeof to.meta.title === 'string' ? to.meta.title : '颐安盾'
-  document.title = `${title} · 颐安盾`
+  const title = typeof to.meta.title === 'string' ? to.meta.title : '智安护居'
+  document.title = `${title} · 智安护居`
 })
 
 export default router

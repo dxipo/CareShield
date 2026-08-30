@@ -1,0 +1,41 @@
+logLevel: warn
+logDestinations: [stdout]
+
+# The server has no host-published ports. These permissions are therefore
+# limited to the private Compose network and let the relay inspect readiness
+# and Workers read the single internal path.
+authInternalUsers:
+  - user: any
+    pass:
+    ips: []
+    permissions:
+      - action: publish
+        path: careshield
+      - action: read
+        path: careshield
+      - action: playback
+        path: careshield
+      - action: api
+
+rtsp: yes
+rtspAddress: :8554
+rtspTransports: [tcp]
+
+api: yes
+apiAddress: :9997
+metrics: false
+playback: yes
+playbackAddress: :9996
+
+pathDefaults:
+  record: yes
+  recordPath: /recordings/%path/%Y-%m-%d_%H-%M-%S-%f
+  recordFormat: fmp4
+  recordPartDuration: 500ms
+  recordMaxPartSize: 50M
+  recordSegmentDuration: 2s
+  recordDeleteAfter: 2m
+
+paths:
+  careshield:
+    source: publisher

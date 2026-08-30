@@ -36,7 +36,7 @@ const navigation = [
         <el-icon :size="24"><VideoCamera /></el-icon>
       </span>
       <div>
-        <strong>颐安盾</strong>
+        <strong>智安护居</strong>
         <span>CareShield Platform</span>
       </div>
     </div>
@@ -52,8 +52,8 @@ const navigation = [
     <div class="app-sidebar__footer">
       <span class="app-sidebar__footer-dot" aria-hidden="true"></span>
       <div>
-        <strong>M5.2 STGCN Detection</strong>
-        <span>真实骨架序列跌倒检测</span>
+        <strong>M6 Fall Risk Model</strong>
+        <span>MotionCLIP 核心模型链路</span>
       </div>
     </div>
   </aside>

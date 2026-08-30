@@ -4,9 +4,9 @@ import { useRoute } from 'vue-router'
 
 const route = useRoute()
 
-const title = computed(() => (typeof route.meta.title === 'string' ? route.meta.title : '颐安盾'))
+const title = computed(() => (typeof route.meta.title === 'string' ? route.meta.title : '智安护居'))
 const subtitle = computed(() =>
-  typeof route.meta.subtitle === 'string' ? route.meta.subtitle : 'Elderly AI Safety Platform',
+  typeof route.meta.subtitle === 'string' ? route.meta.subtitle : 'CareShield',
 )
 </script>
 
@@ -17,10 +17,10 @@ const subtitle = computed(() =>
       <p>{{ subtitle }}</p>
     </div>
     <div class="app-topbar__meta">
-      <span class="app-topbar__phase">M5.2</span>
+      <span class="app-topbar__phase">M6</span>
       <div>
-        <strong>Elderly AI Safety Platform</strong>
-        <span>STGCN-Extend detection baseline</span>
+        <strong>CareShield</strong>
+        <span>Fall risk model integration</span>
       </div>
     </div>
   </header>

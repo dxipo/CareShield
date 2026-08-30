@@ -5,7 +5,9 @@ from fastapi import FastAPI
 from app.api.algorithms import router as algorithms_router
 from app.api.dependencies import close_ai_realtime_service, close_device_service
 from app.api.devices import router as devices_router
+from app.api.events import router as events_router
 from app.api.fall_detection import router as fall_detection_router
+from app.api.fall_risk import router as fall_risk_router
 from app.api.health import router as health_router
 from app.api.internal_ai import router as internal_ai_router
 from app.api.internal_media import router as internal_media_router
@@ -22,13 +24,15 @@ async def lifespan(_: FastAPI):
     await close_ai_realtime_service()
 
 app = FastAPI(
-    title="Elderly AI Safety Platform API",
+    title="CareShield API",
     version="0.5.0",
     lifespan=lifespan,
 )
 app.include_router(health_router, prefix="/api")
 app.include_router(devices_router, prefix="/api")
+app.include_router(events_router, prefix="/api")
 app.include_router(fall_detection_router, prefix="/api")
+app.include_router(fall_risk_router, prefix="/api")
 app.include_router(streams_router, prefix="/api")
 app.include_router(integrations_router, prefix="/api")
 app.include_router(algorithms_router, prefix="/api")

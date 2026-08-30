@@ -14,6 +14,10 @@ class RealtimeStore:
     LATEST_PREFIX = "ai:latest:"
     HISTORY_KEY = "ai:history:fall_detection"
     HISTORY_LIMIT = 100
+    RISK_EVENTS_KEY = "ai:events:risk"
+    RISK_EVENT_LATCH_PREFIX = "ai:event:fall:active:"
+    RISK_EVENT_LIMIT = 500
+    RISK_EVENT_LATCH_TTL_SECONDS = 86_400
 
     def __init__(self, settings: AiRealtimeSettings) -> None:
         self._settings = settings
@@ -63,6 +67,7 @@ class RealtimeStore:
         """Keep meaningful, non-simulated state changes for operator review."""
         if result.simulated or result.task.value != "fall_detection":
             return
+        await self._append_fall_event(result)
         previous_payload = await self._redis.lindex(self.HISTORY_KEY, 0)
         if previous_payload:
             previous = AlgorithmResult.model_validate_json(previous_payload)
@@ -85,6 +90,35 @@ class RealtimeStore:
         )
         return [AlgorithmResult.model_validate_json(payload) for payload in payloads]
 
+    async def get_risk_events(self, limit: int = 50) -> list[AlgorithmResult]:
+        payloads = await self._redis.lrange(
+            self.RISK_EVENTS_KEY,
+            0,
+            min(max(limit, 1), self.RISK_EVENT_LIMIT) - 1,
+        )
+        return [AlgorithmResult.model_validate_json(payload) for payload in payloads]
+
+    async def _append_fall_event(self, result: AlgorithmResult) -> None:
+        """Persist one event per active real fall alert lifecycle."""
+        latch_key = self._fall_event_latch_key(result.device_id)
+        alert_active = result.metadata.get("alert_active") is True
+        if not alert_active:
+            await self._redis.delete(latch_key)
+            return
+        if result.label != "fallen" or await self._redis.get(latch_key):
+            return
+        await self._redis.set(
+            latch_key,
+            str(result.result_id),
+            ex=self.RISK_EVENT_LATCH_TTL_SECONDS,
+        )
+        await self._redis.lpush(self.RISK_EVENTS_KEY, result.model_dump_json())
+        await self._redis.ltrim(
+            self.RISK_EVENTS_KEY,
+            0,
+            self.RISK_EVENT_LIMIT - 1,
+        )
+
     async def close(self) -> None:
         await self._redis.aclose()
 
@@ -96,3 +130,12 @@ class RealtimeStore:
             else "global"
         )
         return f"{cls.LATEST_PREFIX}{task}:{device_key}"
+
+    @classmethod
+    def _fall_event_latch_key(cls, device_id: str | None) -> str:
+        device_key = (
+            hashlib.sha256(device_id.encode()).hexdigest()[:16]
+            if device_id
+            else "global"
+        )
+        return f"{cls.RISK_EVENT_LATCH_PREFIX}{device_key}"

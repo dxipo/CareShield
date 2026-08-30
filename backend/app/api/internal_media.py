@@ -41,15 +41,20 @@ async def get_worker_stream(
     service: Annotated[StreamService, Depends(get_stream_service)],
     channel_no: Annotated[int, Query(ge=1, le=64)] = 1,
     quality: Literal["high", "fluent"] = "high",
+    protocol: Literal["hls", "http_flv"] = "http_flv",
 ) -> StreamPlayback:
-    """Issue a temporary runtime stream to an authenticated AI Worker."""
+    """Issue a temporary runtime stream to an authenticated Worker.
+
+    Realtime inference explicitly uses HTTP-FLV. Batch assessment can request
+    HLS so it does not compete for the realtime transport session.
+    """
 
     try:
         return await service.get_live_stream(
             device_serial,
             channel_no=channel_no,
             quality=quality,
-            protocol="http_flv",
+            protocol=protocol,
         )
     except EzvizError as exc:
         raise _internal_media_exception(exc) from exc

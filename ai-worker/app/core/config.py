@@ -34,6 +34,7 @@ class WorkerSettings:
     person_confidence: float = 0.20
     media_request_timeout_seconds: float = 10.0
     media_reconnect_seconds: float = 3.0
+    media_relay_internal_url: str = ""
     fall_config: FallDetectionConfig = field(default_factory=FallDetectionConfig)
 
     @property
@@ -127,6 +128,9 @@ def load_worker_settings() -> WorkerSettings:
         media_reconnect_seconds=float(
             os.getenv("AI_MEDIA_RECONNECT_SECONDS", "3")
         ),
+        media_relay_internal_url=os.getenv(
+            "MEDIA_RELAY_INTERNAL_URL", ""
+        ).strip().rstrip("/"),
         fall_config=fall_config,
     )
 

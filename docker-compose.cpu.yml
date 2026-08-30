@@ -3,3 +3,7 @@ services:
     gpus: !reset []
     environment:
       AI_DEVICE: cpu
+  motionclip-worker:
+    gpus: !reset []
+    environment:
+      MOTIONCLIP_DEVICE: cpu

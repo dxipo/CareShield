@@ -1,0 +1,1 @@
+"""Media relay configuration."""

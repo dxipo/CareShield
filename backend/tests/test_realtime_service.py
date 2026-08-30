@@ -98,3 +98,26 @@ def test_websocket_initial_state_does_not_replay_stale_result_as_live() -> None:
         ]
 
     asyncio.run(run())
+
+
+def test_capabilities_are_aggregated_across_isolated_workers() -> None:
+    workers = [
+        WorkerHeartbeat(
+            worker_id="realtime-worker",
+            online=True,
+            timestamp=datetime.now(timezone.utc),
+            version="0.5.0",
+            capabilities=AlgorithmCapabilities(fall_detection="running"),
+        ),
+        WorkerHeartbeat(
+            worker_id="risk-worker",
+            online=True,
+            timestamp=datetime.now(timezone.utc),
+            version="0.6.0",
+            capabilities=AlgorithmCapabilities(fall_risk="installed"),
+        ),
+    ]
+    result = AiRealtimeService._aggregate_capabilities(workers)
+    assert result.fall_detection == "running"
+    assert result.fall_risk == "installed"
+    assert result.fraud_detection == "not_installed"

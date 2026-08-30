@@ -9,6 +9,20 @@ from .algorithm import (
     RiskLevel,
     WorkerHeartbeat,
 )
+from .fall_risk import (
+    AssessmentArtifact,
+    AssessmentQuality,
+    AssessmentStatus,
+    FallRiskAssessment,
+    FallRiskAssessmentCreate,
+    FallRiskConceptResult,
+    FallRiskModelInfo,
+    FallRiskModelResult,
+    FallRiskWorkerStatus,
+    GaitParameterValue,
+    PipelineState,
+    PipelineStatus,
+)
 
 __all__ = [
     "AlgorithmCapabilities",
@@ -18,4 +32,16 @@ __all__ = [
     "RealtimeMessageType",
     "RiskLevel",
     "WorkerHeartbeat",
+    "AssessmentArtifact",
+    "AssessmentQuality",
+    "AssessmentStatus",
+    "FallRiskAssessment",
+    "FallRiskAssessmentCreate",
+    "FallRiskConceptResult",
+    "FallRiskModelInfo",
+    "FallRiskModelResult",
+    "FallRiskWorkerStatus",
+    "GaitParameterValue",
+    "PipelineState",
+    "PipelineStatus",
 ]

@@ -29,6 +29,10 @@ class FakeRedis:
     async def get(self, key):
         return self.values.get(key)
 
+    async def delete(self, key):
+        self.values.pop(key, None)
+        self.expirations.pop(key, None)
+
     async def scan_iter(self, match):
         prefix = match.removesuffix("*")
         for key in self.values:
@@ -152,5 +156,41 @@ def test_fall_history_keeps_real_state_changes_without_duplicate_heartbeats() ->
         history = await store.get_fall_history()
         assert [item.label for item in history] == ["fallen", "normal"]
         assert fake.expirations[store.HISTORY_KEY] == 1234
+
+    asyncio.run(run())
+
+
+def test_risk_events_keep_one_real_fall_per_alert_lifecycle() -> None:
+    async def run() -> None:
+        store = RealtimeStore(settings())
+        fake = FakeRedis()
+        store._redis = fake
+
+        def result(label: str, *, alert_active: bool, simulated: bool = False):
+            return AlgorithmResult(
+                result_id=uuid4(),
+                task=AlgorithmTask.FALL_DETECTION,
+                model_id="stgcn-extend",
+                model_version="m5.2",
+                device_id="safe-device-id",
+                result_timestamp=datetime.now(timezone.utc),
+                label=label,
+                level="critical" if label == "fallen" else "normal",
+                metadata={"alert_active": alert_active},
+                simulated=simulated,
+            )
+
+        await store.append_fall_history(result("fallen", alert_active=True))
+        await store.append_fall_history(result("fallen", alert_active=True))
+        await store.append_fall_history(result("normal", alert_active=False))
+        await store.append_fall_history(result("fallen", alert_active=True))
+        await store.append_fall_history(
+            result("fallen", alert_active=True, simulated=True)
+        )
+
+        events = await store.get_risk_events()
+        assert [event.label for event in events] == ["fallen", "fallen"]
+        assert all(event.simulated is False for event in events)
+        assert len(fake.lists[store.RISK_EVENTS_KEY]) == 2
 
     asyncio.run(run())

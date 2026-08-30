@@ -31,6 +31,9 @@ class AiRealtimeService:
     async def fall_history(self, limit: int = 20) -> list[AlgorithmResult]:
         return await self._store.get_fall_history(limit)
 
+    async def risk_events(self, limit: int = 50) -> list[AlgorithmResult]:
+        return await self._store.get_risk_events(limit)
+
     async def record_heartbeat(self, heartbeat: WorkerHeartbeat) -> RealtimeEnvelope:
         await self._store.save_worker(heartbeat)
         envelope = self._envelope(
@@ -59,7 +62,7 @@ class AiRealtimeService:
                 "latest_fall_detection": None,
             }
 
-        capabilities = workers[0].capabilities if workers else AlgorithmCapabilities()
+        capabilities = self._aggregate_capabilities(workers)
         return {
             "redis_reachable": redis_reachable,
             "workers": workers,
@@ -80,6 +83,27 @@ class AiRealtimeService:
 
     async def close(self) -> None:
         await self._store.close()
+
+    @staticmethod
+    def _aggregate_capabilities(workers: list[WorkerHeartbeat]) -> AlgorithmCapabilities:
+        priority = {
+            "not_installed": 0,
+            "unavailable": 1,
+            "error": 2,
+            "installed": 3,
+            "starting": 4,
+            "running": 5,
+        }
+
+        def best(name: str):
+            values = [getattr(worker.capabilities, name) for worker in workers]
+            return max(values, key=lambda value: priority[value], default="not_installed")
+
+        return AlgorithmCapabilities(
+            fall_detection=best("fall_detection"),
+            fall_risk=best("fall_risk"),
+            fraud_detection=best("fraud_detection"),
+        )
 
     @staticmethod
     def _envelope(message_type: RealtimeMessageType, data: dict) -> RealtimeEnvelope:

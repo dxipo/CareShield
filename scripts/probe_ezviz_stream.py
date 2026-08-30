@@ -11,6 +11,7 @@ import urllib.error
 import urllib.parse
 import urllib.request
 from typing import Any
+from pathlib import Path
 
 
 def get_json(url: str, *, timeout: float) -> Any:
@@ -80,6 +81,8 @@ def main() -> int:
     parser.add_argument("--api-base-url", default="http://localhost:8000")
     parser.add_argument("--channel-no", type=int, default=1)
     parser.add_argument("--timeout", type=float, default=30.0)
+    parser.add_argument("--capture-output", type=Path)
+    parser.add_argument("--duration", type=int, default=8)
     args = parser.parse_args()
     base_url = args.api_base_url.rstrip("/")
 
@@ -98,6 +101,26 @@ def main() -> int:
         playback_url = playback.get("playback_url") if isinstance(playback, dict) else None
         if not isinstance(playback_url, str) or not playback_url:
             raise RuntimeError("CareShield returned no playback address")
+
+        if args.capture_output is not None:
+            output = args.capture_output.resolve()
+            output.parent.mkdir(parents=True, exist_ok=True)
+            capture = subprocess.run(
+                [
+                    "ffmpeg", "-nostdin", "-hide_banner", "-loglevel", "error", "-y",
+                    "-rw_timeout", str(int(args.timeout * 1_000_000)), "-i", playback_url,
+                    "-t", str(args.duration), "-map", "0:v:0", "-an", "-c:v", "libx264",
+                    "-preset", "fast", "-crf", "18", "-pix_fmt", "yuv420p", str(output),
+                ],
+                capture_output=True,
+                check=False,
+                timeout=args.timeout + args.duration + 10,
+            )
+            if capture.returncode != 0 or not output.is_file() or output.stat().st_size == 0:
+                output.unlink(missing_ok=True)
+                raise RuntimeError("ffmpeg could not capture the live stream")
+            print(f"Captured {args.duration}s diagnostic clip without exposing its URL")
+            return 0
 
         result = subprocess.run(
             [

@@ -1,0 +1,1 @@
+"""External batch pipeline adapters."""

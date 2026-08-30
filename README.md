@@ -1,12 +1,12 @@
-# 颐安盾——多模态居家老人智能风险防控平台
+# 智安护居——多模态居家老人智能风险防控平台
 
-英文名：**Elderly AI Safety Platform**
+英文名：**CareShield**
 
 本项目面向“揭榜挂帅——基于多模态 AI 监测的老年人跌倒风险、心理健康、诈骗识别及预警研究”，计划支持跌倒风险评估、实时跌倒检测和诈骗风险识别。目标摄像设备为 EZVIZ CS-H6c (8WFL, 4mm)。
 
-## 当前阶段：M5.2 STGCN-Extend Real Fall Detection
+## 当前阶段：M6 Fall Risk Model Integration（进行中）
 
-M0–M5.1 已完成基础工程、Dashboard、真实萤石音视频、统一实时结果链和 GPU 姿态检测基线。M5.2 将既有论文工程 `STGCN-Extend` 的真实二分类权重接入 AI Worker，并把算法媒体输入从高延迟 HLS 调整为 Backend 临时签发的 HTTP-FLV；浏览器继续使用低延迟 EZOPEN。
+M0–M5.2 已完成基础工程、Dashboard、真实萤石音视频、统一实时结果链和 GPU 跌倒检测。M6 建设独立的批处理跌倒风险链：VisionMD-Gait 与 GVHMR 生成处理视频、世界系 3D 骨架和 28 项步态参数；独立 MotionCLIP Worker 消费 GVHMR 的 SMPL-X 参数并输出连续健康参考偏离度和八项可解释步态概念。
 
 当前能力状态：
 
@@ -19,7 +19,7 @@ M0–M5.1 已完成基础工程、Dashboard、真实萤石音视频、统一实�
 | AI realtime infrastructure | Implemented in M4; pipeline test is explicitly simulated |
 | AI models | YOLO26n-pose + STGCN-Extend binary classifier in AI Worker only |
 | Fall Detection | M5.2 real COCO17 sequence + STGCN-Extend baseline |
-| Fall Risk | Not implemented |
+| Fall Risk | M6 MotionCLIP core model integrated; research-only, no clinically calibrated risk level |
 | Fraud Detection | Not implemented |
 
 ## 技术架构
@@ -28,6 +28,8 @@ M0–M5.1 已完成基础工程、Dashboard、真实萤石音视频、统一实�
 - Backend：Python + FastAPI + Uvicorn + HTTPX + Redis client + ffprobe
 - Data services：PostgreSQL + Redis（M4 用于 Worker TTL 和 latest result）
 - AI Worker：独立 FastAPI + PyTorch/CUDA + Ultralytics + PyAV 服务
+- Fall Risk Worker：独立 FastAPI 批处理服务；与实时检测的 Python/模型环境隔离
+- MotionCLIP Worker：独立、长驻 GPU 模型服务；模型只加载一次，不接触 EZVIZ 凭据或媒体 URL
 - Deployment：Docker Compose
 - Reverse proxy：Nginx 目录已预留，M0 不加入访问链路
 
@@ -64,6 +66,8 @@ Backend ffprobe ---------------------------> temporary HLS -> safe media metadat
 ├── frontend/          # Vue 前端
 ├── backend/           # FastAPI 后端
 ├── ai-worker/         # 独立 GPU/CPU Worker 与跌倒检测
+├── fall-risk-worker/  # 独立跌倒风险特征提取 Worker
+├── motionclip-worker/ # 独立 CARE-PD MotionCLIP 核心模型 Worker
 ├── shared/            # Backend / Worker 共享数据契约
 ├── infra/nginx/       # Nginx 配置预留
 ├── data/              # 本地数据（内容不入库）
@@ -191,6 +195,7 @@ AI Worker 与 Frontend realtime 测试：
 
 ```bash
 python -m pytest ai-worker/tests
+PYTHONPATH=shared/python:fall-risk-worker python -m pytest fall-risk-worker/tests
 cd frontend
 npm test
 ```
@@ -286,6 +291,29 @@ python3 scripts/probe_ezviz_stream.py
 
 实现、安全、依赖许可证与安全测试原则见 [docs/m5-fall-detection.md](docs/m5-fall-detection.md)。
 
+## M6 当前实现内容
+
+- 新建独立 `fall-risk-worker`，不把 TensorFlow/MeTRAbs/GVHMR 依赖装入实时跌倒检测 Worker
+- 建立异步评估任务、状态、质量、处理产物和 28 项步态参数统一合同
+- Worker 通过 Backend 内部鉴权接口获取临时媒体地址，不持有 EZVIZ Secret
+- 单一 EZVIZ HTTP-FLV 上游经 PyAV 18 识别扩展 HEVC，并通过 `hevc_mp4toannexb` 无解码转封装到内部 MediaMTX RTSP，M5/M6 可同时读取而不抢流
+- MediaMTX 保存 2 分钟短时环形缓冲；M6 按按钮触发的 RFC3339 时间窗截取，不再受 HLS 延迟错位影响
+- 页面显示触发时刻、采集剩余、采集耗时和处理耗时，VisionMD-Gait 与 GVHMR 均通过可替换 CLI Adapter 接入
+- Backend 提供 `/api/fall-risk/status` 和 `/api/fall-risk/assessments` API
+- `/fall-risk` 提供真实采集配置、双链路进度、固定的“MeTRAbs 骨骼 + GVHMR SMPL-X”双视频窗口、28 项参数和质量状态；SMPL-X 默认显示不含原始 RGB 的中性背景隐私替身，并可切换相机叠加诊断；损坏媒体及插值主导结果会被门禁拦截
+- 官方 GVHMR 源码以固定 commit 的 Git submodule 引入；公开 checkpoint 下载到 Git 忽略的 `models/` 目录
+- VisionMD 独立 TensorFlow 2.17/CUDA runtime 与官方 MeTRAbs SavedModel 已就绪；GPU 工程样例已验证 28/28 参数和骨架处理视频产出
+- 用户授权下载的 SMPL 1.1 neutral 与 SMPL-X 1.1 neutral 资产已按只读模型目录接入；GVHMR 的 PyTorch/CUDA 环境通过 `scripts/bootstrap_gvhmr_runtime.sh` 安装到 Git 忽略的独立 runtime，并挂载给 Worker
+- 原 MeTRAbs 骨架处理视频保持独立，GVHMR 另外生成 SMPL-X 相机视角和世界系视角，不用网格渲染覆盖骨架产物
+- 真实 H6c 行走片段已完成 GVHMR 推理验证：相机/世界系 SMPL-X 渲染均为 1280×720、30 FPS，且导出 150 帧米制世界系 3D 骨架与 SMPL-X 参数
+- Backend 通过受控 artifact proxy 向页面提供处理视频，不暴露 Worker token、临时流地址或宿主机路径
+- 无完整人体、步数不足、姿态缺失或参数不可用会进入失败/质量复核语义，不会填充假值
+- SMPL/SMPL-X 仍必须由每位部署者自行接受对应许可证后从官方站点取得；项目不分发这些资产
+- CARE-PD MotionCLIP 默认 profile 已通过独立 Worker 接入，输出连续健康参考偏离度和八项概念；由于没有临床校准，`risk_level` 保持 `null`，不输出自造风险等级或概率
+
+特征链架构与资产准备见 [docs/m6-fall-risk-foundation.md](docs/m6-fall-risk-foundation.md)，核心模型接入见 [docs/motionclip-fall-risk-integration.md](docs/motionclip-fall-risk-integration.md)。
+共享低延迟媒体入口与时间缓冲见 [docs/media-relay.md](docs/media-relay.md)。
+
 ## 尚未实现
 
-RTMP、PTZ、截图、云录像、历史回放、双向语音、设备事件、ASR、跌倒风险评估、诈骗识别、正式事件/短信告警、用户系统、业务数据库表和 Nginx 访问链路均未实现。M5.2 跌倒检测只是研究工程 baseline，训练集规模与泛化验证有限，未经过临床验证；M4 pipeline test 仍只是明确标记的传输诊断。
+RTMP、PTZ、截图、云录像、历史回放、双向语音、设备事件、ASR、临床标定的跌倒风险分级、诈骗识别、正式事件/短信告警、用户系统、业务数据库表和 Nginx 访问链路均未实现。M5.2 跌倒检测只是研究工程 baseline，训练集规模与泛化验证有限，未经过临床验证；M6 的步态参数与 MotionCLIP 输出同样是研究估计而非临床诊断；M4 pipeline test 仍只是明确标记的传输诊断。

@@ -38,6 +38,17 @@ class BackendMediaClient:
     ) -> None:
         self._preferred_serial = settings.fall_device_serial
         self._channel_no = settings.fall_channel_no
+        self._relay_client = (
+            httpx.AsyncClient(
+                base_url=settings.media_relay_internal_url,
+                headers={"Authorization": f"Bearer {settings.shared_token}"},
+                timeout=settings.media_request_timeout_seconds,
+                transport=transport,
+                trust_env=False,
+            )
+            if settings.media_relay_internal_url
+            else None
+        )
         self._client = httpx.AsyncClient(
             base_url=settings.backend_internal_url,
             headers={"Authorization": f"Bearer {settings.shared_token}"},
@@ -72,10 +83,17 @@ class BackendMediaClient:
         return selected
 
     async def get_stream(self, device_serial: str) -> TemporaryStream:
+        relay = await self._get_relay_stream()
+        if relay is not None:
+            return relay
         encoded_serial = quote(device_serial, safe="")
         response = await self._get(
             f"/internal/media/devices/{encoded_serial}/stream",
-            params={"channel_no": self._channel_no, "quality": "high"},
+            params={
+                "channel_no": self._channel_no,
+                "quality": "high",
+                "protocol": "http_flv",
+            },
         )
         try:
             payload = response.json()
@@ -95,6 +113,30 @@ class BackendMediaClient:
 
     async def close(self) -> None:
         await self._client.aclose()
+        if self._relay_client is not None:
+            await self._relay_client.aclose()
+
+    async def _get_relay_stream(self) -> TemporaryStream | None:
+        if self._relay_client is None:
+            return None
+        try:
+            response = await self._relay_client.get("/stream")
+            response.raise_for_status()
+            payload = response.json()
+        except (httpx.HTTPError, ValueError):
+            return None
+        if not isinstance(payload, dict) or payload.get("ready") is not True:
+            return None
+        playback_url = payload.get("playback_url")
+        if not isinstance(playback_url, str) or not playback_url.startswith("rtsp://"):
+            return None
+        return TemporaryStream(
+            playback_url=playback_url,
+            device_id=str(payload.get("device_id", "")),
+            channel_no=self._channel_no,
+            protocol="rtsp",
+            expires_at=None,
+        )
 
     async def _get(self, path: str, **kwargs: Any) -> httpx.Response:
         try:

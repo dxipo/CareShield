@@ -10,6 +10,8 @@ data
 docs
 infra
 models
+runtime
+fall-risk-worker/vendor
 scripts
 backend/tests
 ai-worker/tests

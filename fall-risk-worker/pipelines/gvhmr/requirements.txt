@@ -1,0 +1,31 @@
+# GVHMR inference runtime, derived from the pinned upstream requirements.
+# Torch 2.3.0+cu121 and torchvision 0.18.0+cu121 are installed separately by
+# scripts/bootstrap_gvhmr_runtime.sh so the remaining dependencies use only
+# the configured index and the large CUDA runtime stays outside Docker layers.
+timm==0.9.12
+lightning==2.3.0
+hydra-core==1.3.2
+hydra-zen==0.13.0
+hydra-colorlog==1.2.0
+rich==13.9.4
+numpy==1.23.5
+matplotlib==3.7.5
+opencv-python-headless==4.10.0.84
+ffmpeg-python==0.2.0
+scikit-image==0.21.0
+termcolor==2.4.0
+einops==0.8.0
+imageio==2.34.1
+av==13.0.0
+joblib==1.4.2
+pytorch3d @ https://dl.fbaipublicfiles.com/pytorch3d/packaging/wheels/py310_cu121_pyt230/pytorch3d-0.7.6-cp310-cp310-linux_x86_64.whl
+trimesh==4.5.3
+chumpy==0.70
+smplx==0.1.28
+# GVHMR imports Wis3D for optional diagnostics. PyPI currently publishes 1.0.x;
+# 2.0.0 is not a public release.
+wis3d==1.0.1
+pycolmap==3.11.1
+ultralytics==8.2.42
+cython-bbox==0.1.5
+lapx==0.5.11

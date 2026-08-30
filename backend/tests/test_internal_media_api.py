@@ -23,17 +23,19 @@ class FakeDeviceService:
 
 
 class FakeStreamService:
+    expected_protocol = "http_flv"
+
     async def get_live_stream(self, device_serial, *, channel_no, quality, protocol):
         assert device_serial == "TEST-SERIAL"
-        assert protocol == "http_flv"
+        assert protocol == self.expected_protocol
         return StreamPlayback(
             device_id="ezviz_safe_id",
             channel_no=channel_no,
-            protocol="http_flv",
-            playback_url="https://temporary.invalid/live.flv",
+            protocol=protocol,
+            playback_url=f"https://temporary.invalid/live.{protocol}",
             expires_at=None,
             quality=quality,
-            container="flv",
+            container="flv" if protocol == "http_flv" else "mpeg-ts",
         )
 
 
@@ -76,3 +78,24 @@ def test_internal_media_requires_worker_auth_and_returns_no_ezviz_secrets(monkey
     assert "internal-test-token" not in combined
     assert "appSecret" not in combined
     assert "accessToken" not in combined
+
+
+def test_internal_media_allows_batch_worker_to_request_hls(monkeypatch) -> None:
+    async def streams():
+        service = FakeStreamService()
+        service.expected_protocol = "hls"
+        return service
+
+    app.dependency_overrides[get_stream_service] = streams
+    monkeypatch.setenv("AI_WORKER_SHARED_TOKEN", "internal-test-token")
+    try:
+        response = get(
+            "/internal/media/devices/TEST-SERIAL/stream?protocol=hls",
+            "internal-test-token",
+        )
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 200
+    assert response.json()["protocol"] == "hls"
+    assert response.json()["container"] == "mpeg-ts"
