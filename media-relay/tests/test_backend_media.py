@@ -1,8 +1,9 @@
 import asyncio
+import threading
 
 import httpx
 
-from app.adapters.backend_media import BackendMediaClient
+from app.adapters.backend_media import BackendMediaClient, RelayMediaError
 from app.core.config import RelaySettings
 from app.services.relay import RelayService
 
@@ -89,3 +90,33 @@ def test_relay_converts_hevc_to_annex_b_without_transcoding(monkeypatch) -> None
         "output_stream": output_stream,
     }
     asyncio.run(service.close())
+
+
+def test_publisher_failure_during_cleanup_does_not_escape() -> None:
+    async def run() -> None:
+        service = RelayService(
+            RelaySettings(
+                backend_internal_url="http://backend.test",
+                shared_token="test-token",
+                channel_no=1,
+                publish_url="rtsp://media.test/careshield",
+                public_read_url="rtsp://media.test/careshield",
+                media_server_api_url="http://media.test",
+                reconnect_seconds=1.0,
+            )
+        )
+
+        async def fail_while_stopping() -> None:
+            await asyncio.sleep(0)
+            raise RelayMediaError("Media publisher failed")
+
+        service._publisher_stop = threading.Event()
+        service._publisher_task = asyncio.create_task(fail_while_stopping())
+        await service._stop_publisher()
+
+        assert service._publisher_task is None
+        assert service._publisher_stop is None
+        await service.client.close()
+        await service._media_server.aclose()
+
+    asyncio.run(run())

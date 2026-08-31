@@ -7,3 +7,5 @@ services:
     gpus: !reset []
     environment:
       MOTIONCLIP_DEVICE: cpu
+  ollama:
+    gpus: !reset []

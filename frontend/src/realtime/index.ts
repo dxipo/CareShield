@@ -15,6 +15,7 @@ export const lastRealtimeMessageAt = ref<string | null>(null)
 export const latestWorkerStatus = ref<WorkerStatus | null>(null)
 export const latestPipelineTest = ref<AlgorithmResult | null>(null)
 export const latestFallDetection = ref<AlgorithmResult | null>(null)
+export const latestFraudDetection = ref<AlgorithmResult | null>(null)
 export const latestPipelineLatencyMs = ref<number | null>(null)
 
 client.onStatus((status) => {
@@ -34,6 +35,9 @@ client.onMessage((envelope) => {
   }
   if (result.task === 'fall_detection' && !result.simulated) {
     latestFallDetection.value = result
+  }
+  if (result.task === 'fraud_detection' && !result.simulated) {
+    latestFraudDetection.value = result
   }
 })
 

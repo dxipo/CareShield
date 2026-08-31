@@ -16,6 +16,12 @@ const todayCount = computed(() => {
   return events.value.filter((event) => new Date(event.result_timestamp).toDateString() === today).length
 })
 const latestTime = computed(() => events.value[0]?.result_timestamp ?? null)
+const fallCount = computed(() => events.value.filter((event) => event.task === 'fall_detection').length)
+const fraudCount = computed(() => events.value.filter((event) => event.task === 'fraud_detection').length)
+
+function eventTitle(event: AlgorithmResult): string {
+  return event.task === 'fraud_detection' ? '疑似诈骗告警' : '检测到跌倒'
+}
 
 function formatTime(value: string | null): string {
   if (!value) return '--'
@@ -43,9 +49,7 @@ function maskedDevice(deviceId: string | null): string {
 async function loadEvents(): Promise<void> {
   loading.value = true
   try {
-    events.value = (await fetchRiskEvents(100)).filter(
-      (event) => event.simulated === false && event.task === 'fall_detection' && event.label === 'fallen',
-    )
+    events.value = (await fetchRiskEvents(100)).filter((event) => event.simulated === false)
     loadError.value = false
   } catch {
     loadError.value = true
@@ -62,7 +66,7 @@ onMounted(() => void loadEvents())
     <PageHeader
       eyebrow="RISK EVENT CENTER"
       title="风险事件"
-      description="集中展示真实算法产生的风险记录。当前接入跌倒检测事件，普通状态变化与模拟测试不会进入事件中心。"
+      description="集中展示真实算法产生的跌倒与诈骗风险记录；普通状态变化与模拟测试不会进入事件中心。"
     >
       <template #actions>
         <el-button :icon="Refresh" :loading="loading" @click="loadEvents">刷新事件</el-button>
@@ -76,21 +80,21 @@ onMounted(() => void loadEvents())
     <section class="event-summary" aria-label="风险事件概览">
       <article><span>已记录事件</span><strong>{{ events.length }}</strong><small>仅真实风险结果</small></article>
       <article><span>今日事件</span><strong>{{ todayCount }}</strong><small>按本地日期统计</small></article>
-      <article class="event-summary__critical"><span>跌倒事件</span><strong>{{ events.length }}</strong><small>Critical</small></article>
+      <article class="event-summary__critical"><span>风险类型</span><strong>{{ fallCount }} / {{ fraudCount }}</strong><small>跌倒 / 诈骗</small></article>
       <article><span>最近发生</span><strong class="event-summary__time">{{ formatTime(latestTime) }}</strong><small>真实检测时间</small></article>
     </section>
 
     <section class="panel-card event-list">
       <div class="panel-card__header">
-        <div><span class="panel-card__kicker">RECORDED EVENTS</span><h2>跌倒风险记录</h2></div>
+        <div><span class="panel-card__kicker">RECORDED EVENTS</span><h2>安全风险记录</h2></div>
         <el-tag effect="plain" type="danger">Real results only</el-tag>
       </div>
 
       <p v-if="loadError" class="event-error">风险事件暂时无法读取，请稍后重试。</p>
       <EmptyState
         v-else-if="!loading && events.length === 0"
-        title="暂无已保存的跌倒事件"
-        description="新的真实 fallen 结果会自动记录在这里；不会补造已经丢失的历史记录。"
+        title="暂无已保存的风险事件"
+        description="新的真实跌倒或诈骗风险会自动记录在这里；不会补造已经丢失的历史记录。"
         :icon="Bell"
       />
       <div v-else-if="loading" class="event-loading">正在读取风险事件...</div>
@@ -98,11 +102,11 @@ onMounted(() => void loadEvents())
         <li v-for="event in events" :key="event.result_id">
           <span class="event-list__icon"><el-icon :size="21"><Warning /></el-icon></span>
           <div class="event-list__primary">
-            <div><strong>检测到跌倒</strong><el-tag size="small" type="danger" effect="dark">CRITICAL</el-tag></div>
+            <div><strong>{{ eventTitle(event) }}</strong><el-tag size="small" type="danger" effect="dark">{{ event.level?.toUpperCase() ?? 'RISK' }}</el-tag></div>
             <p>{{ maskedDevice(event.device_id) }} · {{ event.model_id }} / {{ event.model_version }}</p>
           </div>
           <div class="event-list__metric">
-            <span>Fall Score</span>
+            <span>{{ event.task === 'fraud_detection' ? 'Evidence Score' : 'Fall Score' }}</span>
             <strong>{{ formatScore(event.score) }}</strong>
             <small>未校准模型分数</small>
           </div>

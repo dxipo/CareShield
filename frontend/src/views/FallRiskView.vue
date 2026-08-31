@@ -29,7 +29,11 @@ const selectedVideo = ref<File | null>(null)
 const uploadedDurationSeconds = ref<number | null>(null)
 const runningRiskModel = ref(false)
 const error = ref<string | null>(null)
-const smplView = ref<'privacy' | 'overlay'>('privacy')
+// The primary assessment view keeps the captured scene and replaces the
+// person's covered pixels with the camera-aligned SMPL-X mesh. The global
+// view remains available as a research diagnostic without becoming the
+// default presentation.
+const smplView = ref<'overlay' | 'world'>('overlay')
 let poll: ReturnType<typeof setInterval> | null = null
 
 const categories = [
@@ -103,7 +107,7 @@ const smplGlobalArtifact = computed(() =>
 )
 
 const smplArtifact = computed(() => (
-  smplView.value === 'privacy' ? smplGlobalArtifact.value : smplIncameraArtifact.value
+  smplView.value === 'overlay' ? smplIncameraArtifact.value : smplGlobalArtifact.value
 ))
 
 const captureWindowEnd = computed(() => {
@@ -441,8 +445,8 @@ onBeforeUnmount(() => {
           <section class="artifact-slot">
             <div class="artifact-slot__header">
               <div>
-                <span>{{ smplView === 'privacy' ? 'GVHMR GLOBAL' : 'GVHMR INCAMERA' }}</span>
-                <strong>{{ smplView === 'privacy' ? 'SMPL-X 隐私替身视频' : 'SMPL-X 相机叠加视频' }}</strong>
+                <span>{{ smplView === 'overlay' ? 'GVHMR INCAMERA' : 'GVHMR GLOBAL' }}</span>
+                <strong>{{ smplView === 'overlay' ? '原景 SMPL-X 人体网格' : 'SMPL-X 世界系动作视图' }}</strong>
               </div>
               <el-tag effect="plain" :type="smplArtifact && poseQualityUsable ? 'success' : 'info'">
                 {{ smplArtifact && poseQualityUsable ? 'Available' : 'Unavailable' }}
@@ -451,14 +455,14 @@ onBeforeUnmount(() => {
             <div class="smpl-view-switch" role="group" aria-label="SMPL-X 展示模式">
               <button
                 type="button"
-                :class="{ active: smplView === 'privacy' }"
-                @click="smplView = 'privacy'"
-              >隐私替身</button>
-              <button
-                type="button"
                 :class="{ active: smplView === 'overlay' }"
                 @click="smplView = 'overlay'"
-              >相机叠加</button>
+              >原景人体网格</button>
+              <button
+                type="button"
+                :class="{ active: smplView === 'world' }"
+                @click="smplView = 'world'"
+              >世界系视图</button>
             </div>
             <video
               v-if="smplArtifact && poseQualityUsable"
@@ -470,9 +474,14 @@ onBeforeUnmount(() => {
             <EmptyState
               v-else
               title="暂无有效 SMPL-X 视频"
-              description="GVHMR 成功且输入姿态质量达标后显示人体网格；隐私替身模式不包含原始 RGB 画面。"
+              description="GVHMR 成功且输入姿态质量达标后，默认显示保留原始场景背景、以人体网格覆盖人物区域的相机视角视频。"
               :icon="VideoCamera"
             />
+            <p v-if="smplArtifact && poseQualityUsable" class="smpl-view-note">
+              {{ smplView === 'overlay'
+                ? '保留原始场景背景，并在相机坐标中以不透明 SMPL-X 网格覆盖人物主体；网格贴合误差区域仍可能残留原人物像素。'
+                : '世界坐标研究视图不包含原始场景，仅用于检查三维动作连续性。' }}
+            </p>
           </section>
         </div>
       </article>
@@ -640,6 +649,7 @@ onBeforeUnmount(() => {
 .smpl-view-switch { display: flex; gap: 6px; margin-top: 10px; }
 .smpl-view-switch button { padding: 5px 10px; border: 1px solid var(--color-border-light); border-radius: 6px; color: var(--color-text-secondary); background: #fff; cursor: pointer; font: inherit; font-size: 12px; }
 .smpl-view-switch button.active { border-color: #2a8169; color: #17634f; background: #eaf5f1; }
+.smpl-view-note { margin: 10px 2px 0; color: var(--color-text-secondary); font-size: 11px; line-height: 1.6; }
 .artifact-slot :deep(.empty-state) { min-height: 210px; margin-top: 12px; padding: 20px 14px; background: #fff; }
 .history-panel, .parameter-panel { margin-bottom: 20px; }
 .history-list { display: grid; gap: 8px; margin-top: 18px; }

@@ -8,6 +8,7 @@ const DevicesView = () => import('../views/DevicesView.vue')
 const EventsView = () => import('../views/EventsView.vue')
 const FallDetectionView = () => import('../views/FallDetectionView.vue')
 const FallRiskView = () => import('../views/FallRiskView.vue')
+const FraudRiskView = () => import('../views/FraudRiskView.vue')
 const ModulePlaceholderView = () => import('../views/ModulePlaceholderView.vue')
 const MonitorView = () => import('../views/MonitorView.vue')
 const SystemView = () => import('../views/SystemView.vue')
@@ -62,14 +63,7 @@ const router = createRouter({
         {
           path: 'fraud-risk',
           name: 'fraud-risk',
-          component: ModulePlaceholderView,
-          props: {
-            title: '诈骗风险',
-            description: '用于未来呈现通话与场景中的诈骗风险识别结果。',
-            emptyTitle: '诈骗风险模型尚未接入',
-            emptyDescription: '当前阶段不采集音频，也不生成风险判断。',
-            iconName: 'lock',
-          },
+          component: FraudRiskView,
           meta: {
             title: '诈骗风险',
             subtitle: '诈骗风险识别模块',

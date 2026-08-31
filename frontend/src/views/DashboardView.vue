@@ -19,12 +19,13 @@ import DashboardLiveMonitor from '../components/DashboardLiveMonitor.vue'
 import EmptyState from '../components/EmptyState.vue'
 import PageHeader from '../components/PageHeader.vue'
 import StatusCard from '../components/StatusCard.vue'
-import { latestFallDetection } from '../realtime'
+import { latestFallDetection, latestFraudDetection } from '../realtime'
 import type { AlgorithmCapabilities, AlgorithmResult } from '../realtime/types'
 
 const onlineDeviceValue = ref('--')
 const onlineDeviceDescription = ref('正在获取设备')
 const initialFallDetection = ref<AlgorithmResult | null>(null)
+const initialFraudDetection = ref<AlgorithmResult | null>(null)
 const capabilities = ref<AlgorithmCapabilities | null>(null)
 const fallRiskReady = ref(false)
 const fallRiskModelReady = ref(false)
@@ -34,6 +35,7 @@ let refreshTimer: ReturnType<typeof setInterval> | null = null
 let clockTimer: ReturnType<typeof setInterval> | null = null
 
 const fallResult = computed(() => latestFallDetection.value ?? initialFallDetection.value)
+const fraudResult = computed(() => latestFraudDetection.value ?? initialFraudDetection.value)
 const fallResultFresh = computed(() => {
   const result = fallResult.value
   return Boolean(
@@ -78,14 +80,41 @@ const fallDetectionTone = computed<'neutral' | 'success' | 'warning' | 'danger'>
   return fallResult.value.label === 'normal' ? 'success' : 'neutral'
 })
 
+const fraudValue = computed(() => {
+  const result = fraudResult.value
+  if (!result || result.simulated || result.task !== 'fraud_detection') {
+    return capabilities.value?.fraud_detection === 'running' ? '监听中' : '不可用'
+  }
+  return {
+    normal: '正常',
+    suspicious: '可疑话术',
+    warning: '疑似诈骗',
+    critical: '高风险诈骗',
+  }[result.label] ?? '监听中'
+})
+const fraudTone = computed<'neutral' | 'success' | 'warning' | 'danger'>(() => {
+  if (fraudResult.value?.label === 'critical') return 'danger'
+  if (['suspicious', 'warning'].includes(fraudResult.value?.label ?? '')) return 'warning'
+  return capabilities.value?.fraud_detection === 'running' ? 'success' : 'neutral'
+})
+const fraudDescription = computed(() =>
+  capabilities.value?.fraud_detection === 'running' ? '真实音频检测' : '诈骗检测 Worker 未就绪',
+)
+
 const safetyValue = computed(() => {
+  if (fraudResult.value?.label === 'critical') return '风险告警'
+  if (fraudResult.value?.label === 'warning') return '重点关注'
   if (fallResultFresh.value && fallResult.value?.label === 'fallen') return '风险告警'
   if (fallResultFresh.value && fallResult.value?.label === 'suspected_fall') return '重点关注'
   return capabilities.value?.fall_detection === 'running' ? '监测中' : '不可用'
 })
-const safetyDescription = computed(() =>
-  capabilities.value?.fall_detection === 'running' ? '基于实时跌倒检测' : '安全监测未运行',
-)
+const safetyDescription = computed(() => {
+  const running = [
+    capabilities.value?.fall_detection,
+    capabilities.value?.fraud_detection,
+  ].filter((value) => value === 'running').length
+  return running > 0 ? `基于 ${running} 项实时安全检测` : '安全监测未运行'
+})
 const safetyTone = computed<'neutral' | 'success' | 'warning' | 'danger'>(() => {
   if (safetyValue.value === '风险告警') return 'danger'
   if (safetyValue.value === '重点关注') return 'warning'
@@ -119,6 +148,10 @@ async function loadFallDetection() {
     const result = snapshot.latest_fall_detection
     if (result?.task === 'fall_detection' && result.simulated === false) {
       initialFallDetection.value = result
+    }
+    const fraud = snapshot.latest_fraud_detection
+    if (fraud?.task === 'fraud_detection' && fraud.simulated === false) {
+      initialFraudDetection.value = fraud
     }
   } catch {
     initialFallDetection.value = null
@@ -200,7 +233,13 @@ onBeforeUnmount(() => {
         :icon="Warning"
         :tone="fallDetectionTone"
       />
-      <StatusCard title="诈骗风险" value="--" description="模型未接入" :icon="Lock" />
+      <StatusCard
+        title="诈骗风险"
+        :value="fraudValue"
+        :description="fraudDescription"
+        :icon="Lock"
+        :tone="fraudTone"
+      />
       <StatusCard
         title="在线设备"
         :value="onlineDeviceValue"
@@ -258,7 +297,7 @@ onBeforeUnmount(() => {
         />
         <ol v-else class="dashboard-events">
           <li v-for="event in recentEvents" :key="event.result_id">
-            <span><i></i><strong>检测到跌倒</strong></span>
+            <span><i></i><strong>{{ event.task === 'fraud_detection' ? '疑似诈骗告警' : '检测到跌倒' }}</strong></span>
             <time :datetime="event.result_timestamp">{{ formatEventTime(event.result_timestamp) }}</time>
           </li>
           <li class="dashboard-events__more"><router-link to="/events">查看全部风险事件</router-link></li>

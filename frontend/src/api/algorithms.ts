@@ -7,6 +7,7 @@ export interface AlgorithmsStatus {
   capabilities: AlgorithmCapabilities
   latest_pipeline_test: AlgorithmResult | null
   latest_fall_detection: AlgorithmResult | null
+  latest_fraud_detection: AlgorithmResult | null
 }
 
 export interface SystemStatus {

@@ -194,3 +194,41 @@ def test_risk_events_keep_one_real_fall_per_alert_lifecycle() -> None:
         assert len(fake.lists[store.RISK_EVENTS_KEY]) == 2
 
     asyncio.run(run())
+
+
+def test_risk_events_keep_one_real_fraud_event_per_alert_lifecycle() -> None:
+    async def run() -> None:
+        store = RealtimeStore(settings())
+        fake = FakeRedis()
+        store._redis = fake
+
+        def result(label: str, level: str, alert_active: bool):
+            return AlgorithmResult(
+                result_id=uuid4(),
+                task=AlgorithmTask.FRAUD_DETECTION,
+                model_id="fraud-ensemble",
+                model_version="m7-v1",
+                result_timestamp=datetime.now(timezone.utc),
+                label=label,
+                level=level,
+                metadata={
+                    "alert_active": alert_active,
+                    "evidence_categories": ["transfer"],
+                    "transcript_preview": "private household conversation",
+                },
+                simulated=False,
+            )
+
+        await store.append_fraud_event(result("warning", "high", True))
+        await store.append_fraud_event(result("critical", "critical", True))
+        await store.append_fraud_event(result("normal", "normal", False))
+        await store.append_fraud_event(result("critical", "critical", True))
+
+        events = await store.get_risk_events()
+        assert [event.task for event in events] == [
+            AlgorithmTask.FRAUD_DETECTION,
+            AlgorithmTask.FRAUD_DETECTION,
+        ]
+        assert all("transcript_preview" not in event.metadata for event in events)
+
+    asyncio.run(run())

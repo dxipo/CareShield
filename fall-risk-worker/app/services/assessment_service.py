@@ -732,14 +732,14 @@ class FallRiskAssessmentService:
             (
                 "gvhmr-incamera",
                 "gvhmr_incamera",
-                "SMPL-X 相机视角",
+                "原景 SMPL-X 人体网格",
                 "video/mp4",
                 any(output.rglob("1_incam.mp4")),
             ),
             (
                 "gvhmr-global",
                 "gvhmr_global",
-                "世界系运动视角",
+                "SMPL-X 世界系动作视图",
                 "video/mp4",
                 any(output.rglob("2_global.mp4")),
             ),

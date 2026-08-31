@@ -25,6 +25,7 @@ class AlgorithmsStatusResponse(BaseModel):
     capabilities: AlgorithmCapabilities
     latest_pipeline_test: AlgorithmResult | None
     latest_fall_detection: AlgorithmResult | None
+    latest_fraud_detection: AlgorithmResult | None
 
 
 class SystemStatusResponse(BaseModel):

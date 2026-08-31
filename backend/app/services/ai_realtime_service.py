@@ -21,6 +21,7 @@ class AiRealtimeService:
     async def ingest_result(self, result: AlgorithmResult) -> RealtimeEnvelope:
         await self._store.save_latest_result(result)
         await self._store.append_fall_history(result)
+        await self._store.append_fraud_event(result)
         envelope = self._envelope(
             RealtimeMessageType.ALGORITHM_RESULT,
             result.model_dump(mode="json"),
@@ -53,6 +54,9 @@ class AiRealtimeService:
             latest_fall_detection = await self._store.get_latest_result(
                 AlgorithmTask.FALL_DETECTION.value
             )
+            latest_fraud_detection = await self._store.get_latest_result(
+                AlgorithmTask.FRAUD_DETECTION.value
+            )
         except Exception:
             return {
                 "redis_reachable": False,
@@ -60,6 +64,7 @@ class AiRealtimeService:
                 "capabilities": AlgorithmCapabilities(),
                 "latest_pipeline_test": None,
                 "latest_fall_detection": None,
+                "latest_fraud_detection": None,
             }
 
         capabilities = self._aggregate_capabilities(workers)
@@ -69,6 +74,7 @@ class AiRealtimeService:
             "capabilities": capabilities,
             "latest_pipeline_test": latest,
             "latest_fall_detection": latest_fall_detection,
+            "latest_fraud_detection": latest_fraud_detection,
         }
 
     async def initial_messages(self) -> list[RealtimeEnvelope]:

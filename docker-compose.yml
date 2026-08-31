@@ -194,6 +194,69 @@ services:
       start_period: 90s
     restart: unless-stopped
 
+  fraud-worker:
+    build:
+      context: .
+      dockerfile: fraud-worker/Dockerfile
+      args:
+        PIP_INDEX_URL: ${PIP_INDEX_URL:-https://pypi.org/simple}
+    environment:
+      BACKEND_INTERNAL_URL: http://backend:8000
+      MEDIA_RELAY_INTERNAL_URL: http://media-relay:8095
+      AI_WORKER_SHARED_TOKEN: ${AI_WORKER_SHARED_TOKEN:?Set AI_WORKER_SHARED_TOKEN in .env}
+      FRAUD_WORKER_ID: ${FRAUD_WORKER_ID:-careshield-fraud-1}
+      FRAUD_WORKER_VERSION: ${FRAUD_WORKER_VERSION:-0.7.0}
+      AI_WORKER_HEARTBEAT_INTERVAL_SECONDS: ${AI_WORKER_HEARTBEAT_INTERVAL_SECONDS:-10}
+      FRAUD_DETECTION_ENABLED: ${FRAUD_DETECTION_ENABLED:-true}
+      FRAUD_ASR_PROVIDER: ${FRAUD_ASR_PROVIDER:-faster_whisper}
+      FRAUD_ASR_MODEL_PATH: /models/fraud/whisper-model
+      FRAUD_ASR_DEVICE: ${FRAUD_ASR_DEVICE:-cpu}
+      FRAUD_ASR_COMPUTE_TYPE: ${FRAUD_ASR_COMPUTE_TYPE:-int8}
+      FRAUD_ASR_CPU_THREADS: ${FRAUD_ASR_CPU_THREADS:-2}
+      FRAUD_ASR_NUM_WORKERS: ${FRAUD_ASR_NUM_WORKERS:-1}
+      FRAUD_ASR_MINIMUM_CONFIDENCE: ${FRAUD_ASR_MINIMUM_CONFIDENCE:-0.50}
+      FRAUD_AUDIO_RMS_THRESHOLD: ${FRAUD_AUDIO_RMS_THRESHOLD:-180}
+      FRAUD_ENDPOINT_SILENCE_SECONDS: ${FRAUD_ENDPOINT_SILENCE_SECONDS:-0.7}
+      FRAUD_MINIMUM_UTTERANCE_SECONDS: ${FRAUD_MINIMUM_UTTERANCE_SECONDS:-0.5}
+      FRAUD_MAXIMUM_UTTERANCE_SECONDS: ${FRAUD_MAXIMUM_UTTERANCE_SECONDS:-15}
+      FRAUD_LLM_ENABLED: ${FRAUD_LLM_ENABLED:-true}
+      FRAUD_OLLAMA_BASE_URL: http://ollama:11434
+      FRAUD_OLLAMA_MODEL: ${FRAUD_OLLAMA_MODEL:-qwen3:4b}
+      FRAUD_TRANSCRIPT_RETENTION_SECONDS: ${FRAUD_TRANSCRIPT_RETENTION_SECONDS:-60}
+    volumes:
+      - ${FRAUD_ASR_MODEL_HOST_PATH:-./models/fraud/whisper-model}:/models/fraud/whisper-model:ro
+    depends_on:
+      backend:
+        condition: service_healthy
+      media-relay:
+        condition: service_healthy
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://localhost:8092/health')",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    restart: unless-stopped
+
+  ollama:
+    image: ollama/ollama:0.12.11
+    gpus: all
+    volumes:
+      - ollama_data:/root/.ollama
+    healthcheck:
+      test: ["CMD", "ollama", "list"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+      start_period: 20s
+    restart: unless-stopped
+
   media-server:
     image: bluenviron/mediamtx:1.20.0
     volumes:
@@ -268,3 +331,4 @@ volumes:
   redis_data:
   fall-risk-data:
   media-recordings:
+  ollama_data:

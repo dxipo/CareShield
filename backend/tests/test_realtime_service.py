@@ -24,6 +24,9 @@ class RecordingStore:
     async def append_fall_history(self, result):
         return None
 
+    async def append_fraud_event(self, result):
+        return None
+
 
 class RecordingSocket:
     def __init__(self) -> None:
@@ -116,8 +119,15 @@ def test_capabilities_are_aggregated_across_isolated_workers() -> None:
             version="0.6.0",
             capabilities=AlgorithmCapabilities(fall_risk="installed"),
         ),
+        WorkerHeartbeat(
+            worker_id="fraud-worker",
+            online=True,
+            timestamp=datetime.now(timezone.utc),
+            version="0.7.0",
+            capabilities=AlgorithmCapabilities(fraud_detection="running"),
+        ),
     ]
     result = AiRealtimeService._aggregate_capabilities(workers)
     assert result.fall_detection == "running"
     assert result.fall_risk == "installed"
-    assert result.fraud_detection == "not_installed"
+    assert result.fraud_detection == "running"

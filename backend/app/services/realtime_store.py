@@ -16,6 +16,7 @@ class RealtimeStore:
     HISTORY_LIMIT = 100
     RISK_EVENTS_KEY = "ai:events:risk"
     RISK_EVENT_LATCH_PREFIX = "ai:event:fall:active:"
+    FRAUD_EVENT_LATCH_PREFIX = "ai:event:fraud:active:"
     RISK_EVENT_LIMIT = 500
     RISK_EVENT_LATCH_TTL_SECONDS = 86_400
 
@@ -98,6 +99,42 @@ class RealtimeStore:
         )
         return [AlgorithmResult.model_validate_json(payload) for payload in payloads]
 
+    async def append_fraud_event(self, result: AlgorithmResult) -> None:
+        """Persist one high-risk event per real fraud alert lifecycle."""
+        if result.simulated or result.task.value != "fraud_detection":
+            return
+        latch_key = self._fraud_event_latch_key(result.device_id)
+        alert_active = result.metadata.get("alert_active") is True
+        if not alert_active:
+            await self._redis.delete(latch_key)
+            return
+        if result.level is None or result.level.value not in {"high", "critical"}:
+            return
+        if await self._redis.get(latch_key):
+            return
+        safe_metadata = {
+            key: value
+            for key, value in result.metadata.items()
+            if key
+            in {
+                "score_type",
+                "audio_source",
+                "asr_provider",
+                "evidence_categories",
+                "matched_terms",
+                "llm_used",
+                "alert_active",
+            }
+        }
+        persisted = result.model_copy(update={"metadata": safe_metadata})
+        await self._redis.set(
+            latch_key,
+            str(result.result_id),
+            ex=self.RISK_EVENT_LATCH_TTL_SECONDS,
+        )
+        await self._redis.lpush(self.RISK_EVENTS_KEY, persisted.model_dump_json())
+        await self._redis.ltrim(self.RISK_EVENTS_KEY, 0, self.RISK_EVENT_LIMIT - 1)
+
     async def _append_fall_event(self, result: AlgorithmResult) -> None:
         """Persist one event per active real fall alert lifecycle."""
         latch_key = self._fall_event_latch_key(result.device_id)
@@ -139,3 +176,12 @@ class RealtimeStore:
             else "global"
         )
         return f"{cls.RISK_EVENT_LATCH_PREFIX}{device_key}"
+
+    @classmethod
+    def _fraud_event_latch_key(cls, device_id: str | None) -> str:
+        device_key = (
+            hashlib.sha256(device_id.encode()).hexdigest()[:16]
+            if device_id
+            else "global"
+        )
+        return f"{cls.FRAUD_EVENT_LATCH_PREFIX}{device_key}"

@@ -4,9 +4,9 @@
 
 本项目面向“揭榜挂帅——基于多模态 AI 监测的老年人跌倒风险、心理健康、诈骗识别及预警研究”，计划支持跌倒风险评估、实时跌倒检测和诈骗风险识别。目标摄像设备为 EZVIZ CS-H6c (8WFL, 4mm)。
 
-## 当前阶段：M6 Fall Risk Model Integration（进行中）
+## 当前阶段：M7 Real-time Fraud Detection（进行中）
 
-M0–M5.2 已完成基础工程、Dashboard、真实萤石音视频、统一实时结果链和 GPU 跌倒检测。M6 建设独立的批处理跌倒风险链：VisionMD-Gait 与 GVHMR 生成处理视频、世界系 3D 骨架和 28 项步态参数；独立 MotionCLIP Worker 消费 GVHMR 的 SMPL-X 参数并输出连续健康参考偏离度和八项可解释步态概念。
+M0–M6 已完成基础工程、Dashboard、真实萤石音视频、统一实时结果链、GPU 跌倒检测和批处理跌倒风险链。M7 建设独立诈骗风险 Worker：从共享 H6c AAC 音轨进行本地语音识别，以规则证据和可选本地 Ollama 复核产生实时诈骗风险结果。
 
 当前能力状态：
 
@@ -20,7 +20,7 @@ M0–M5.2 已完成基础工程、Dashboard、真实萤石音视频、统一实�
 | AI models | YOLO26n-pose + STGCN-Extend binary classifier in AI Worker only |
 | Fall Detection | M5.2 real COCO17 sequence + STGCN-Extend baseline |
 | Fall Risk | M6 MotionCLIP core model integrated; research-only, no clinically calibrated risk level |
-| Fraud Detection | Not implemented |
+| Fraud Detection | M7 baseline integrated; real audio/ASR/rules, optional local Ollama adjudication |
 
 ## 技术架构
 
@@ -30,6 +30,7 @@ M0–M5.2 已完成基础工程、Dashboard、真实萤石音视频、统一实�
 - AI Worker：独立 FastAPI + PyTorch/CUDA + Ultralytics + PyAV 服务
 - Fall Risk Worker：独立 FastAPI 批处理服务；与实时检测的 Python/模型环境隔离
 - MotionCLIP Worker：独立、长驻 GPU 模型服务；模型只加载一次，不接触 EZVIZ 凭据或媒体 URL
+- Fraud Worker：独立 CPU-first 音频服务；本地 Whisper ASR、规则状态机与可选 Ollama 复核
 - Deployment：Docker Compose
 - Reverse proxy：Nginx 目录已预留，M0 不加入访问链路
 
@@ -68,6 +69,7 @@ Backend ffprobe ---------------------------> temporary HLS -> safe media metadat
 ├── ai-worker/         # 独立 GPU/CPU Worker 与跌倒检测
 ├── fall-risk-worker/  # 独立跌倒风险特征提取 Worker
 ├── motionclip-worker/ # 独立 CARE-PD MotionCLIP 核心模型 Worker
+├── fraud-worker/      # 独立实时音频诈骗识别 Worker
 ├── shared/            # Backend / Worker 共享数据契约
 ├── infra/nginx/       # Nginx 配置预留
 ├── data/              # 本地数据（内容不入库）
@@ -196,6 +198,7 @@ AI Worker 与 Frontend realtime 测试：
 ```bash
 python -m pytest ai-worker/tests
 PYTHONPATH=shared/python:fall-risk-worker python -m pytest fall-risk-worker/tests
+PYTHONPATH=shared/python:fraud-worker python -m pytest fraud-worker/tests
 cd frontend
 npm test
 ```
@@ -316,6 +319,20 @@ python3 scripts/probe_ezviz_stream.py
 特征链架构与资产准备见 [docs/m6-fall-risk-foundation.md](docs/m6-fall-risk-foundation.md)，核心模型接入见 [docs/motionclip-fall-risk-integration.md](docs/motionclip-fall-risk-integration.md)。
 共享低延迟媒体入口与时间缓冲见 [docs/media-relay.md](docs/media-relay.md)。
 
+## M7 当前实现内容
+
+- 新建独立 `fraud-worker`，不把 ASR 或 LLM 依赖装入 Backend、跌倒检测或跌倒风险 Worker
+- 复用 Media Relay 中真实 H6c AAC 音轨，不向 Fraud Worker 提供 EZVIZ Secret 或临时上游播放地址
+- AAC 解码后统一重采样为 16 kHz mono PCM，并提供静音端点切分、长度上限和自动重连
+- 使用 Git 忽略的本地 CTranslate2 Whisper 模型进行真实中文转写；低置信度结果不进入业务检测
+- 复用原型中的老人诈骗关键词、高危组合、上下文累积和滞回状态思想，输出分数明确为未校准证据强度
+- 本地 Ollama `qwen3:4b` 作为可选二次复核；模型缺失时规则检测继续运行并明确报告 LLM unavailable
+- 真实结果统一发布为 `task=fraud_detection`、`simulated=false`，经 Backend、Redis、WebSocket 到 Vue
+- `/fraud-risk` 展示真实 Worker、音频、ASR、LLM、脱敏文本、风险证据和红色告警
+- Dashboard 诈骗风险卡和风险事件中心接入真实诈骗结果；完整音频不保存，完整对话不进入 Redis
+
+架构、安全边界和调试方法见 [docs/m7-fraud-detection.md](docs/m7-fraud-detection.md)。
+
 ## 尚未实现
 
-RTMP、PTZ、截图、云录像、历史回放、双向语音、设备事件、ASR、临床标定的跌倒风险分级、诈骗识别、正式事件/短信告警、用户系统、业务数据库表和 Nginx 访问链路均未实现。M5.2 跌倒检测只是研究工程 baseline，训练集规模与泛化验证有限，未经过临床验证；M6 的步态参数与 MotionCLIP 输出同样是研究估计而非临床诊断；M4 pipeline test 仍只是明确标记的传输诊断。
+RTMP、PTZ、截图、云录像、历史回放、双向语音、设备事件、临床标定的跌倒风险分级、短信/家属通知、用户系统、业务数据库表和 Nginx 访问链路均未实现。M7 诈骗识别仍是研究 baseline，关键词、ASR 与本地 LLM 需要在真实正常/诈骗对话数据集上继续评估误报与漏报；M5.2 跌倒检测和 M6 跌倒风险同样未经临床验证。

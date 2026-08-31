@@ -36,12 +36,15 @@ def verify_internal_token(
 
 
 @app.get("/health")
-async def health() -> dict[str, str | bool]:
+async def health() -> dict[str, str | bool | int | None]:
     snapshot = relay.snapshot()
     return {
-        "status": "ok",
+        "status": "ok" if snapshot.ready else "degraded",
         "service": "media-relay",
         "stream_ready": snapshot.ready,
+        "relay_status": snapshot.status,
+        "reconnect_count": snapshot.reconnect_count,
+        "last_error": snapshot.last_error,
     }
 
 

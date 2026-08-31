@@ -115,6 +115,18 @@ class RelayService:
                 self._last_error = str(exc)
                 await self._stop_publisher()
                 await asyncio.sleep(self.settings.reconnect_seconds)
+            except Exception:
+                # Keep the long-lived reconnect loop alive even if a media
+                # library raises an unexpected exception. Do not retain the
+                # exception text because it can contain the temporary source
+                # URL and its query credentials.
+                self._status = "reconnecting"
+                self._path_ready = False
+                self._connected_at = None
+                self._reconnect_count += 1
+                self._last_error = "Media relay encountered an internal failure"
+                await self._stop_publisher()
+                await asyncio.sleep(self.settings.reconnect_seconds)
 
     async def _wait_until_published(self) -> None:
         """Require a ready MediaMTX path; process survival alone is insufficient."""
@@ -162,13 +174,36 @@ class RelayService:
         self._path_ready = False
         if stop is not None:
             stop.set()
-        if task is None or task.done():
+        if task is None:
+            return
+        if task.done():
+            self._consume_publisher_result(task)
             return
         try:
             await asyncio.wait_for(asyncio.shield(task), timeout=20.0)
         except asyncio.TimeoutError:
             # PyAV network reads have their own 15-second timeout. The thread
             # will close naturally without spawning a second publisher.
+            pass
+        except RelayMediaError:
+            # The publisher commonly reports its media failure while this
+            # cleanup coroutine is waiting. That failure already caused the
+            # reconnect and must not terminate the long-lived runner.
+            pass
+        except Exception:
+            # Never retain/log the raw exception because FFmpeg may embed the
+            # temporary playback URL in it.
+            pass
+
+    @staticmethod
+    def _consume_publisher_result(task: asyncio.Task[None]) -> None:
+        """Retrieve a completed task exception without re-raising or leaking it."""
+
+        try:
+            task.result()
+        except (asyncio.CancelledError, RelayMediaError):
+            pass
+        except Exception:
             pass
 
     def _remux(self, source_url: str, stop: threading.Event) -> None:
