@@ -91,6 +91,9 @@ async def create_video_assessment(
     height_cm: Annotated[float, Query(ge=80.0, le=230.0)],
     capture_duration_seconds: Annotated[int, Query(ge=8, le=60)],
     source_filename: Annotated[str, Query(min_length=1, max_length=255)],
+    subject_name: Annotated[str | None, Query(min_length=1, max_length=80)] = None,
+    sex: Annotated[str | None, Query(pattern="^(male|female)$")] = None,
+    age: Annotated[int | None, Query(ge=1, le=120)] = None,
 ) -> FallRiskAssessment:
     media_type = request.headers.get("content-type", "").partition(";")[0].strip().lower()
     if media_type != "video/mp4":
@@ -98,6 +101,9 @@ async def create_video_assessment(
     raw_length = request.headers.get("content-length")
     content_length = int(raw_length) if raw_length and raw_length.isdigit() else None
     upload = FallRiskVideoAssessmentCreate(
+        subject_name=subject_name,
+        sex=sex,
+        age=age,
         height_cm=height_cm,
         capture_duration_seconds=capture_duration_seconds,
         source_filename=source_filename,

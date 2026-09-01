@@ -21,10 +21,15 @@ from careshield_contracts import (
 
 from app.adapters.backend_media import BackendMediaClient
 from app.adapters.command_pipeline import CommandPipeline, PipelineExecutionError
-from app.adapters.media_validation import MediaIntegrityError, validate_video_capture
+from app.adapters.media_validation import (
+    MediaIntegrityError,
+    create_browser_preview,
+    validate_video_capture,
+)
 from app.adapters.motionclip import MotionClipClient, MotionClipError
 from app.adapters.recorder import CaptureError, capture_video
 from app.adapters.relay_recording import BufferedCaptureError, RelayRecordingClient
+from app.adapters.risk_explanation import RiskExplanationClient
 from app.core.config import FallRiskWorkerSettings
 from app.services.job_store import AssessmentStore
 from app.services.parameter_catalog import map_parameters
@@ -84,6 +89,12 @@ class FallRiskAssessmentService:
             settings.motionclip_internal_url,
             settings.shared_token,
         )
+        self.risk_explanation = RiskExplanationClient(
+            enabled=settings.risk_explanation_enabled,
+            base_url=settings.risk_explanation_base_url,
+            model=settings.risk_explanation_model,
+            timeout_seconds=settings.risk_explanation_timeout_seconds,
+        )
         self._active_task: asyncio.Task | None = None
         self._active_id: UUID | None = None
 
@@ -132,6 +143,9 @@ class FallRiskAssessmentService:
             raise AssessmentBusyError("Another fall-risk assessment is already running")
         await self.motionclip.refresh_health()
         assessment = self._new_assessment(
+            subject_name=request.subject_name,
+            sex=request.sex,
+            age=request.age,
             height_cm=request.height_cm,
             duration_seconds=request.capture_duration_seconds,
             device_id=request.device_id,
@@ -159,6 +173,9 @@ class FallRiskAssessmentService:
         if not safe_filename.lower().endswith(".mp4"):
             raise VideoUploadError("Only MP4 video uploads are supported")
         assessment = self._new_assessment(
+            subject_name=request.subject_name,
+            sex=request.sex,
+            age=request.age,
             height_cm=request.height_cm,
             duration_seconds=request.capture_duration_seconds,
             device_id=None,
@@ -212,6 +229,9 @@ class FallRiskAssessmentService:
     def _new_assessment(
         self,
         *,
+        subject_name: str | None,
+        sex: str | None,
+        age: int | None,
         height_cm: float,
         duration_seconds: int,
         device_id: str | None,
@@ -228,6 +248,9 @@ class FallRiskAssessmentService:
             device_id=device_id,
             input_source=input_source,
             source_filename=source_filename,
+            subject_name=subject_name,
+            sex=sex,
+            age=age,
             height_cm=height_cm,
             capture_duration_seconds=duration_seconds,
             created_at=now,
@@ -252,6 +275,7 @@ class FallRiskAssessmentService:
                 pass
         await self.media.close()
         await self.motionclip.close()
+        await self.risk_explanation.close()
         if self.recordings is not None:
             await self.recordings.close()
 
@@ -261,7 +285,8 @@ class FallRiskAssessmentService:
             raise AssessmentArtifactNotFoundError("Assessment artifact not found")
         directory = self.store.directory(assessment_id)
         if artifact_id == "source-video":
-            candidate = directory / "source.mp4"
+            preview = directory / "source-preview.mp4"
+            candidate = preview if preview.is_file() else directory / "source.mp4"
         elif artifact_id == "gait-overlay":
             candidate = directory / "visionmd" / "visionmd_overlay.mp4"
         elif artifact_id == "gvhmr-incamera":
@@ -303,6 +328,7 @@ class FallRiskAssessmentService:
         await self.store.save(assessment)
         try:
             result = await self.motionclip.predict(assessment_id)
+            result = await self.risk_explanation.explain(result)
             assessment = assessment.model_copy(
                 update={
                     "status": AssessmentStatus.COMPLETED,
@@ -363,6 +389,7 @@ class FallRiskAssessmentService:
             else:
                 if not source.is_file():
                     raise MediaIntegrityError("Uploaded video is unavailable")
+                await create_browser_preview(source, directory / "source-preview.mp4")
                 device_id = None
                 capture_completed_at = datetime.now(timezone.utc)
             source_artifact = AssessmentArtifact(
@@ -475,6 +502,7 @@ class FallRiskAssessmentService:
                     await self.store.save(assessment)
                     try:
                         risk_result = await self.motionclip.predict(assessment.assessment_id)
+                        risk_result = await self.risk_explanation.explain(risk_result)
                         assessment = assessment.model_copy(
                             update={
                                 "risk_pipeline": PipelineState(

@@ -26,6 +26,10 @@ class FallRiskWorkerSettings:
     motionclip_internal_url: str = ""
     media_relay_internal_url: str = ""
     media_relay_playback_url: str = ""
+    risk_explanation_enabled: bool = False
+    risk_explanation_base_url: str = ""
+    risk_explanation_model: str = "qwen3:4b"
+    risk_explanation_timeout_seconds: float = 12.0
 
 
 def load_settings() -> FallRiskWorkerSettings:
@@ -80,4 +84,16 @@ def load_settings() -> FallRiskWorkerSettings:
         media_relay_playback_url=os.getenv(
             "MEDIA_RELAY_PLAYBACK_URL", ""
         ).strip().rstrip("/"),
+        risk_explanation_enabled=os.getenv(
+            "FALL_RISK_LLM_EXPLANATION_ENABLED", "false"
+        ).strip().lower() in {"1", "true", "yes", "on"},
+        risk_explanation_base_url=os.getenv(
+            "FALL_RISK_OLLAMA_BASE_URL", "http://ollama:11434"
+        ).strip().rstrip("/"),
+        risk_explanation_model=os.getenv(
+            "FALL_RISK_OLLAMA_MODEL", "qwen3:4b"
+        ).strip(),
+        risk_explanation_timeout_seconds=float(
+            os.getenv("FALL_RISK_LLM_TIMEOUT_SECONDS", "12")
+        ),
     )

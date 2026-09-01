@@ -5,7 +5,6 @@ import {
   Cpu,
   DataBoard,
   Lock,
-  Monitor,
   Setting,
   TrendCharts,
   VideoCamera,
@@ -18,7 +17,6 @@ const route = useRoute()
 
 const navigation = [
   { path: '/dashboard', label: '综合首页', icon: markRaw(DataBoard) },
-  { path: '/monitor', label: '实时监测', icon: markRaw(Monitor) },
   { path: '/fall-risk', label: '跌倒风险', icon: markRaw(TrendCharts) },
   { path: '/fall-detection', label: '跌倒检测', icon: markRaw(Warning) },
   { path: '/fraud-risk', label: '诈骗风险', icon: markRaw(Lock) },
@@ -52,8 +50,8 @@ const navigation = [
     <div class="app-sidebar__footer">
       <span class="app-sidebar__footer-dot" aria-hidden="true"></span>
       <div>
-        <strong>M6 Fall Risk Model</strong>
-        <span>MotionCLIP 核心模型链路</span>
+        <strong>CareShield 智慧守护</strong>
+        <span>多模态居家安全监护</span>
       </div>
     </div>
   </aside>
@@ -69,8 +67,9 @@ const navigation = [
   padding: 0 14px 18px;
   flex: 0 0 248px;
   flex-direction: column;
-  color: #d9e5e0;
-  background: #142b27;
+  color: var(--color-text-secondary);
+  background: var(--color-sidebar);
+  border-right: 1px solid var(--color-border);
 }
 
 .app-sidebar__brand {
@@ -79,7 +78,7 @@ const navigation = [
   height: 84px;
   padding: 0 10px;
   gap: 12px;
-  border-bottom: 1px solid rgb(255 255 255 / 8%);
+  border-bottom: 1px solid var(--color-border-light);
 }
 
 .app-sidebar__brand-mark {
@@ -88,10 +87,10 @@ const navigation = [
   justify-content: center;
   width: 42px;
   height: 42px;
-  border: 1px solid rgb(149 209 185 / 32%);
+  border: 1px solid var(--sidebar-logo-border);
   border-radius: 12px;
-  color: #a9dec8;
-  background: rgb(83 160 129 / 16%);
+  color: var(--sidebar-logo-color);
+  background: var(--color-primary-soft);
 }
 
 .app-sidebar__brand div,
@@ -102,7 +101,7 @@ const navigation = [
 }
 
 .app-sidebar__brand strong {
-  color: #ffffff;
+  color: var(--color-heading);
   font-size: 18px;
   letter-spacing: 0.08em;
 }
@@ -110,14 +109,14 @@ const navigation = [
 .app-sidebar__brand span,
 .app-sidebar__footer span {
   margin-top: 3px;
-  color: #8fa8a0;
+  color: var(--color-text-muted);
   font-size: 10px;
   letter-spacing: 0.04em;
 }
 
 .app-sidebar__section-label {
   padding: 26px 15px 10px;
-  color: #718c83;
+  color: var(--sidebar-section-color);
   font-size: 10px;
   font-weight: 700;
   letter-spacing: 0.14em;
@@ -126,11 +125,11 @@ const navigation = [
 .app-sidebar__menu {
   border-right: 0;
   background: transparent;
-  --el-menu-text-color: #aec0ba;
-  --el-menu-hover-text-color: #ffffff;
+  --el-menu-text-color: var(--sidebar-nav-text);
+  --el-menu-hover-text-color: var(--sidebar-nav-hover-text);
   --el-menu-bg-color: transparent;
-  --el-menu-hover-bg-color: rgb(255 255 255 / 6%);
-  --el-menu-active-color: #dff7ed;
+  --el-menu-hover-bg-color: var(--sidebar-nav-hover-bg);
+  --el-menu-active-color: var(--sidebar-nav-active-text);
 }
 
 .app-sidebar__menu :deep(.el-menu-item) {
@@ -141,7 +140,7 @@ const navigation = [
 }
 
 .app-sidebar__menu :deep(.el-menu-item.is-active) {
-  background: rgb(74 157 125 / 23%);
+  background: var(--sidebar-nav-active-bg);
 }
 
 .app-sidebar__menu :deep(.el-menu-item.is-active::before) {
@@ -150,7 +149,7 @@ const navigation = [
   width: 3px;
   height: 20px;
   border-radius: 0 3px 3px 0;
-  background: #75c9a8;
+  background: var(--color-primary);
   content: "";
 }
 
@@ -160,13 +159,13 @@ const navigation = [
   margin-top: auto;
   padding: 15px;
   gap: 11px;
-  border: 1px solid rgb(255 255 255 / 8%);
+  border: 1px solid var(--color-border);
   border-radius: 10px;
-  background: rgb(255 255 255 / 3%);
+  background: var(--sidebar-footer-bg);
 }
 
 .app-sidebar__footer strong {
-  color: #d9e5e0;
+  color: var(--sidebar-footer-text);
   font-size: 11px;
   font-weight: 600;
 }
@@ -175,7 +174,7 @@ const navigation = [
   width: 8px;
   height: 8px;
   border-radius: 50%;
-  background: #67c99f;
-  box-shadow: 0 0 0 4px rgb(103 201 159 / 12%);
+  background: var(--color-success);
+  box-shadow: 0 0 0 4px rgb(34 160 107 / 10%);
 }
 </style>

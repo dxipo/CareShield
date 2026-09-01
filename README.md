@@ -229,10 +229,10 @@ python3 scripts/probe_ezviz_stream.py
 ## M1 当前已完成内容
 
 - 统一的桌面 Dashboard 布局、侧边导航和顶部栏
-- 综合首页、实时监测、跌倒风险、跌倒检测、诈骗风险、风险事件、设备管理、算法管理和系统状态路由
+- 综合首页、跌倒风险、跌倒检测、诈骗风险、风险事件、设备管理、算法管理和系统状态路由
 - 无真实业务数据区域统一显示“未接入”或 Empty State
-- Dashboard 与系统状态页继续读取真实 `GET /api/health`
-- 摄像头、风险趋势与事件区域仅提供明确占位，不使用测试视频或模拟 AI 数据
+- 系统状态页继续读取真实 `GET /api/health`
+- Dashboard 展示真实摄像头、近 7 日风险事件趋势和最近风险事件，不使用测试视频或模拟 AI 数据
 
 ## M2 当前已完成内容
 
@@ -259,7 +259,7 @@ python3 scripts/probe_ezviz_stream.py
 
 ## M5.1 当前已完成内容
 
-- `/monitor` 使用官方 `ezuikit-js` 的 EZOPEN 播放器，浏览器不再通过标准 HLS 预览。
+- Dashboard 使用官方 `ezuikit-js` 的 EZOPEN 播放器，浏览器不再通过标准 HLS 预览。
 - 首帧事件直接驱动 `LIVE` 并记录本次连接首帧耗时，移除遮挡控制区的人工确认按钮。
 - EZOPEN 会话显式启用、响应禁止缓存，播放 URL 与 Token 不持久化、不写日志。
 - 标准 HLS 仅保留给 Backend ffprobe；AI Worker 改用低延迟 HTTP-FLV，浏览器继续使用 EZOPEN。实际端到端延迟以真实运行验收为准。
@@ -305,7 +305,7 @@ python3 scripts/probe_ezviz_stream.py
 - Backend 提供 `/api/fall-risk/status` 和 `/api/fall-risk/assessments` API
 - 跌倒风险输入同时支持 H6c 定时采集和 8–60 秒本地 MP4 上传；两种输入复用同一 VisionMD、GVHMR 与 MotionCLIP 管线，上传文件仅保存在本机运行数据卷
 - VisionMD 先剔除首尾无人画面；中间长时间无人时按姿态轨迹拆段并选择有效帧最多的连续片段，短暂漏检才允许插值；质量门限按秒计算，不随源视频 FPS 改变
-- `/fall-risk` 提供真实采集/文件导入、双链路进度、原始视频、MeTRAbs 骨骼、GVHMR SMPL-X、28 项参数和模型结果；历史评估可选择回看，重启后由持久化 manifest 恢复；损坏媒体及插值主导结果会被门禁拦截
+- `/fall-risk` 提供受试者信息、真实采集/文件导入、统一进度、输入视频、原景 SMPL-X、8 项核心参数与完整参数展开、风险分级结果；历史评估每页 5 条并可回看，重启后由持久化 manifest 恢复；损坏媒体及插值主导结果会被门禁拦截
 - 官方 GVHMR 源码以固定 commit 的 Git submodule 引入；公开 checkpoint 下载到 Git 忽略的 `models/` 目录
 - VisionMD 独立 TensorFlow 2.17/CUDA runtime 与官方 MeTRAbs SavedModel 已就绪；GPU 工程样例已验证 28/28 参数和骨架处理视频产出
 - 用户授权下载的 SMPL 1.1 neutral 与 SMPL-X 1.1 neutral 资产已按只读模型目录接入；GVHMR 的 PyTorch/CUDA 环境通过 `scripts/bootstrap_gvhmr_runtime.sh` 安装到 Git 忽略的独立 runtime，并挂载给 Worker
@@ -314,14 +314,15 @@ python3 scripts/probe_ezviz_stream.py
 - Backend 通过受控 artifact proxy 向页面提供处理视频，不暴露 Worker token、临时流地址或宿主机路径
 - 无完整人体、步数不足、姿态缺失或参数不可用会进入失败/质量复核语义，不会填充假值
 - SMPL/SMPL-X 仍必须由每位部署者自行接受对应许可证后从官方站点取得；项目不分发这些资产
-- CARE-PD MotionCLIP 默认 profile 已通过独立 Worker 接入，输出连续健康参考偏离度和八项概念；由于没有临床校准，`risk_level` 保持 `null`，不输出自造风险等级或概率
+- CARE-PD MotionCLIP 默认 profile 已通过独立 Worker 接入，输出连续健康参考偏离度、八项概念及低/中/高研究分级；分级阈值来自匹配 checkpoint 的训练集有序阈值实验，不作为临床诊断或校准概率
+- 风险说明采用“结构化模型事实 + 可选本地 Qwen 表达”方式；Qwen 不参与分级且不接收姓名，超时或输出不合规时自动回退到确定性自然语言模板
 
 特征链架构与资产准备见 [docs/m6-fall-risk-foundation.md](docs/m6-fall-risk-foundation.md)，核心模型接入见 [docs/motionclip-fall-risk-integration.md](docs/motionclip-fall-risk-integration.md)。
 共享低延迟媒体入口与时间缓冲见 [docs/media-relay.md](docs/media-relay.md)。
 
 ## M7 当前实现内容
 
-- 新建独立 `fraud-worker`，不把 ASR 或 LLM 依赖装入 Backend、跌倒检测或跌倒风险 Worker
+- 新建独立 `fraud-worker`，不把 ASR 或诈骗判定逻辑装入 Backend、跌倒检测或跌倒风险 Worker；跌倒风险仅可选复用 Ollama 做结果措辞，不复用诈骗上下文
 - 复用 Media Relay 中真实 H6c AAC 音轨，不向 Fraud Worker 提供 EZVIZ Secret 或临时上游播放地址
 - AAC 解码后统一重采样为 16 kHz mono PCM，并提供静音端点切分、长度上限和自动重连
 - 使用 Git 忽略的本地 CTranslate2 Whisper 模型进行真实中文转写；低置信度结果不进入业务检测

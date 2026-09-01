@@ -51,23 +51,23 @@ withDefaults(
   width: 34px;
   height: 34px;
   border-radius: 9px;
-  color: #526b63;
-  background: #eef3f1;
+  color: var(--color-neutral-icon);
+  background: var(--color-neutral-soft);
 }
 
 .status-card--success .status-card__icon {
-  color: var(--color-primary);
-  background: var(--color-primary-soft);
+  color: var(--color-success);
+  background: var(--color-success-soft);
 }
 
 .status-card--warning .status-card__icon {
-  color: #a5661e;
-  background: #fff3df;
+  color: var(--color-warning);
+  background: var(--color-warning-soft);
 }
 
 .status-card--danger .status-card__icon {
   color: var(--color-danger);
-  background: #faeae8;
+  background: var(--color-danger-soft);
 }
 
 .status-card__label {
@@ -83,7 +83,7 @@ withDefaults(
   display: block;
   margin-top: 18px;
   color: var(--color-heading);
-  font-size: 26px;
+  font-size: 27px;
   font-weight: 700;
   line-height: 1;
 }

@@ -1,6 +1,9 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { Moon, Sunny } from '@element-plus/icons-vue'
+import { computed, ref } from 'vue'
 import { useRoute } from 'vue-router'
+
+import { applyTheme, getActiveTheme, type AppTheme } from '../theme'
 
 const route = useRoute()
 
@@ -8,6 +11,13 @@ const title = computed(() => (typeof route.meta.title === 'string' ? route.meta.
 const subtitle = computed(() =>
   typeof route.meta.subtitle === 'string' ? route.meta.subtitle : 'CareShield',
 )
+const theme = ref<AppTheme>(getActiveTheme())
+const nextThemeLabel = computed(() => theme.value === 'light' ? '切换深色模式' : '切换浅色模式')
+
+function toggleTheme(): void {
+  theme.value = theme.value === 'light' ? 'dark' : 'light'
+  applyTheme(theme.value)
+}
 </script>
 
 <template>
@@ -16,11 +26,22 @@ const subtitle = computed(() =>
       <h2>{{ title }}</h2>
       <p>{{ subtitle }}</p>
     </div>
-    <div class="app-topbar__meta">
-      <span class="app-topbar__phase">M6</span>
-      <div>
-        <strong>CareShield</strong>
-        <span>Fall risk model integration</span>
+    <div class="app-topbar__actions">
+      <el-button
+        class="app-topbar__theme"
+        :icon="theme === 'light' ? Moon : Sunny"
+        :aria-label="nextThemeLabel"
+        :title="nextThemeLabel"
+        @click="toggleTheme"
+      >
+        {{ theme === 'light' ? '深色模式' : '浅色模式' }}
+      </el-button>
+      <div class="app-topbar__meta">
+        <span class="app-topbar__phase">CS</span>
+        <div>
+          <strong>CareShield</strong>
+          <span>Smart elderly care &amp; safety</span>
+        </div>
       </div>
     </div>
   </header>
@@ -34,7 +55,7 @@ const subtitle = computed(() =>
   height: 72px;
   padding: 0 30px;
   border-bottom: 1px solid var(--color-border);
-  background: rgb(255 255 255 / 92%);
+  background: var(--color-topbar);
 }
 
 h2 {
@@ -50,10 +71,15 @@ p {
   font-size: 11px;
 }
 
+.app-topbar__actions,
 .app-topbar__meta {
   display: flex;
   align-items: center;
   gap: 12px;
+}
+
+.app-topbar__theme {
+  min-width: 98px;
 }
 
 .app-topbar__phase {
@@ -62,7 +88,7 @@ p {
   justify-content: center;
   min-width: 38px;
   height: 27px;
-  border: 1px solid #cce1d8;
+  border: 1px solid var(--color-primary-border);
   border-radius: 7px;
   color: var(--color-primary);
   background: var(--color-primary-soft);

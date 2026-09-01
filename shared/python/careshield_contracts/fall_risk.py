@@ -36,6 +36,9 @@ class PipelineStatus(str, Enum):
 class FallRiskAssessmentCreate(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
+    subject_name: str | None = Field(default=None, min_length=1, max_length=80)
+    sex: Literal["male", "female"] | None = None
+    age: int | None = Field(default=None, ge=1, le=120)
     height_cm: float = Field(ge=80.0, le=230.0)
     capture_duration_seconds: int = Field(default=15, ge=8, le=60)
     device_id: str | None = Field(default=None, max_length=256)
@@ -44,6 +47,9 @@ class FallRiskAssessmentCreate(BaseModel):
 class FallRiskVideoAssessmentCreate(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
+    subject_name: str | None = Field(default=None, min_length=1, max_length=80)
+    sex: Literal["male", "female"] | None = None
+    age: int | None = Field(default=None, ge=1, le=120)
     height_cm: float = Field(ge=80.0, le=230.0)
     capture_duration_seconds: int = Field(ge=8, le=60)
     source_filename: str = Field(min_length=1, max_length=255)
@@ -143,7 +149,7 @@ class FallRiskModelResult(BaseModel):
     model: FallRiskModelInfo
     metadata: dict[str, object]
     healthy_distance: float = Field(ge=0.0, le=2.0)
-    risk_level: None = None
+    risk_level: Literal["low", "medium", "high"] | None = None
     concepts: dict[str, FallRiskConceptResult]
     explanation: str
 
@@ -158,6 +164,9 @@ class FallRiskAssessment(BaseModel):
     device_id: str | None = Field(default=None, max_length=256)
     input_source: Literal["camera", "uploaded_video"] = "camera"
     source_filename: str | None = Field(default=None, max_length=255)
+    subject_name: str | None = Field(default=None, max_length=80)
+    sex: Literal["male", "female"] | None = None
+    age: int | None = Field(default=None, ge=1, le=120)
     height_cm: float = Field(ge=80.0, le=230.0)
     capture_duration_seconds: int = Field(ge=8, le=60)
     created_at: datetime

@@ -125,7 +125,7 @@ onBeforeUnmount(() => {
           <el-tag :type="stateType" effect="dark">{{ stateText }}</el-tag>
         </div>
         <strong>{{ stateText }}</strong>
-        <p>{{ available ? '真实音频检测正在运行，simulated=false' : 'Fraud Worker 或音频输入当前不可用' }}</p>
+        <p>{{ available ? '音频监测与风险分析正常运行' : 'Fraud Worker 或音频输入当前不可用' }}</p>
         <dl>
           <div><dt>Evidence Score</dt><dd>{{ result?.score == null ? '--' : result.score.toFixed(3) }}</dd></div>
           <div><dt>Level</dt><dd>{{ result?.level?.toUpperCase() ?? '--' }}</dd></div>
@@ -176,7 +176,7 @@ onBeforeUnmount(() => {
 </template>
 
 <style scoped>
-.fraud-alert { display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px; padding: 16px 18px; border: 1px solid #efaaa4; border-radius: 10px; color: #8f201a; background: #fff1f0; }
+.fraud-alert { display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px; padding: 16px 18px; border: 1px solid var(--color-danger-border); border-radius: 10px; color: var(--color-danger-text); background: var(--color-danger-soft); }
 .fraud-alert strong, .fraud-alert span { display: block; }
 .fraud-alert span { margin-left: 18px; font-size: 13px; }
 .fraud-notice { margin: -6px 0 18px; color: var(--color-text-muted); font-size: 12px; }
@@ -184,7 +184,7 @@ onBeforeUnmount(() => {
 .fraud-grid { display: grid; margin-bottom: 20px; grid-template-columns: 1.15fr 0.85fr; gap: 20px; }
 .risk-state > strong { display: block; margin: 24px 0 8px; color: var(--color-heading); font-size: 34px; }
 .risk-state > p { color: var(--color-text-muted); font-size: 12px; }
-.risk-state--danger { border-color: #efaaa4; }
+.risk-state--danger { border-color: var(--color-danger-border); }
 dl { margin: 22px 0 0; }
 dl div { display: flex; justify-content: space-between; padding: 11px 0; border-bottom: 1px solid var(--color-border-light); }
 dt { color: var(--color-text-muted); font-size: 12px; }

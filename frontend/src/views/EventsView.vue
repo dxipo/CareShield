@@ -121,10 +121,10 @@ onMounted(() => void loadEvents())
 .event-policy {
   margin: -8px 0 18px;
   padding: 11px 14px;
-  border: 1px solid #eadbbf;
+  border: 1px solid var(--color-warning-border);
   border-radius: 9px;
-  color: #755a2c;
-  background: #fffaf0;
+  color: var(--color-warning-text);
+  background: var(--color-warning-soft);
   font-size: 12px;
 }
 
@@ -163,8 +163,8 @@ onMounted(() => void loadEvents())
 }
 
 .event-summary__critical {
-  border-color: #efd0cd !important;
-  background: #fff8f7 !important;
+  border-color: var(--color-danger-border) !important;
+  background: var(--color-danger-soft) !important;
 }
 
 .event-summary__critical strong {
@@ -198,7 +198,7 @@ onMounted(() => void loadEvents())
   height: 40px;
   border-radius: 10px;
   color: var(--color-danger);
-  background: #faeae8;
+  background: var(--color-danger-soft);
 }
 
 .event-list__primary div {

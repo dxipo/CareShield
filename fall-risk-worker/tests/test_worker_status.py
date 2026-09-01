@@ -20,7 +20,7 @@ from app.services.assessment_service import (
     WorkerNotReadyError,
 )
 from app.adapters.command_pipeline import CommandPipeline
-from app.adapters.media_validation import contains_decode_error
+from app.adapters.media_validation import browser_preview_command, contains_decode_error
 
 
 def settings(tmp_path: Path) -> FallRiskWorkerSettings:
@@ -149,6 +149,56 @@ def test_declared_source_video_is_retained_for_history_playback(tmp_path: Path) 
         assert await service.artifact_path(assessment_id, "source-video") == source
         reloaded = (await service.store.list())[0]
         assert reloaded.source_filename == "walking.mp4"
+        await service.close()
+
+    asyncio.run(run())
+
+
+def test_browser_preview_is_h264_faststart_mp4(tmp_path: Path) -> None:
+    command = browser_preview_command(
+        tmp_path / "source.mp4",
+        tmp_path / "source-preview.mp4",
+    )
+
+    assert command[command.index("-c:v") + 1] == "libx264"
+    assert command[command.index("-pix_fmt") + 1] == "yuv420p"
+    assert command[command.index("-movflags") + 1] == "+faststart"
+
+
+def test_history_playback_prefers_browser_preview(tmp_path: Path) -> None:
+    async def run() -> None:
+        service = FallRiskAssessmentService(settings(tmp_path))
+        assessment_id = uuid4()
+        directory = service.store.directory(assessment_id)
+        source = directory / "source.mp4"
+        preview = directory / "source-preview.mp4"
+        directory.mkdir(parents=True)
+        source.write_bytes(b"hevc-source")
+        preview.write_bytes(b"h264-preview")
+        assessment = FallRiskAssessment(
+            assessment_id=assessment_id,
+            status="completed",
+            stage="complete",
+            progress=1,
+            input_source="uploaded_video",
+            source_filename="walking.mp4",
+            height_cm=170,
+            capture_duration_seconds=15,
+            created_at=datetime.now(timezone.utc),
+            gait_pipeline=PipelineState(status="completed"),
+            gvhmr_pipeline=PipelineState(status="completed"),
+            artifacts=[
+                AssessmentArtifact(
+                    artifact_id="source-video",
+                    kind="source_video",
+                    label="source",
+                    media_type="video/mp4",
+                )
+            ],
+        )
+        await service.store.save(assessment)
+
+        assert await service.artifact_path(assessment_id, "source-video") == preview
         await service.close()
 
     asyncio.run(run())

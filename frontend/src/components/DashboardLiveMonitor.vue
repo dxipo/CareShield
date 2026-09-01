@@ -17,6 +17,9 @@ const playerContainerId = 'careshield-dashboard-ezopen-player'
 let player: EZUIKitPlayer | null = null
 let requestController: AbortController | null = null
 let resizeObserver: ResizeObserver | null = null
+let resizeFrame: number | null = null
+let fullscreenResizeTimer: number | null = null
+let playerIsFullscreen = false
 let playerGeneration = 0
 
 const stateLabel = computed(() => {
@@ -49,6 +52,15 @@ function pickDevice(devices: DeviceSummary[]): DeviceSummary | null {
 
 function destroyPlayer(): void {
   playerGeneration += 1
+  playerIsFullscreen = false
+  if (fullscreenResizeTimer !== null) {
+    window.clearTimeout(fullscreenResizeTimer)
+    fullscreenResizeTimer = null
+  }
+  if (resizeFrame !== null) {
+    cancelAnimationFrame(resizeFrame)
+    resizeFrame = null
+  }
   resizeObserver?.disconnect()
   resizeObserver = null
   if (player) {
@@ -58,6 +70,50 @@ function destroyPlayer(): void {
     stalePlayer.destroy()
   }
   playerContainer.value?.replaceChildren()
+}
+
+function schedulePlayerResize(): void {
+  if (resizeFrame !== null) cancelAnimationFrame(resizeFrame)
+
+  // Resizing while EZUIKit is switching into fullscreen can leave its control
+  // layer in fullscreen coordinates after the video canvas has returned.
+  if (playerIsFullscreen || document.fullscreenElement) {
+    resizeFrame = null
+    return
+  }
+
+  // EZUIKit keeps the fullscreen canvas dimensions after ESC. Waiting for two
+  // layout frames ensures the normal 16:9 container has recovered first.
+  resizeFrame = requestAnimationFrame(() => {
+    resizeFrame = requestAnimationFrame(() => {
+      resizeFrame = null
+      const container = playerContainer.value
+      const currentPlayer = player
+      if (!container || !currentPlayer) return
+      currentPlayer.resize(
+        Math.max(container.clientWidth, 1),
+        Math.max(container.clientHeight, 1),
+      )
+    })
+  })
+}
+
+function restorePlayerAfterFullscreen(): void {
+  playerIsFullscreen = false
+  if (fullscreenResizeTimer !== null) window.clearTimeout(fullscreenResizeTimer)
+  // Let EZUIKit restore its template and controls before resizing the decoder.
+  fullscreenResizeTimer = window.setTimeout(() => {
+    fullscreenResizeTimer = null
+    schedulePlayerResize()
+  }, 80)
+}
+
+function handleDocumentFullscreenChange(): void {
+  if (document.fullscreenElement) {
+    playerIsFullscreen = true
+    return
+  }
+  restorePlayerAfterFullscreen()
 }
 
 async function initializePlayer(session: BrowserPlaybackSession): Promise<void> {
@@ -97,15 +153,25 @@ async function initializePlayer(session: BrowserPlaybackSession): Promise<void> 
     errorMessage.value = null
     state.value = 'live'
   })
+  currentPlayer.eventEmitter.on(EZUIKitPlayer.EVENTS.fullscreenChange, (payload) => {
+    const envelope = payload && typeof payload === 'object' && 'data' in payload
+      ? (payload as { data?: unknown }).data
+      : payload
+    const fullscreenState = envelope && typeof envelope === 'object'
+      ? (envelope as { isCurrentFullscreen?: unknown }).isCurrentFullscreen
+      : undefined
+    if (typeof fullscreenState !== 'boolean') return
+    playerIsFullscreen = fullscreenState
+    if (!fullscreenState) restorePlayerAfterFullscreen()
+  })
+  currentPlayer.eventEmitter.on(EZUIKitPlayer.EVENTS.exitFullscreen, restorePlayerAfterFullscreen)
 
-  resizeObserver = new ResizeObserver(([entry]) => {
-    if (!entry || player !== currentPlayer) return
-    currentPlayer.resize(
-      Math.max(entry.contentRect.width, 1),
-      Math.max(entry.contentRect.height, 1),
-    )
+  resizeObserver = new ResizeObserver(() => {
+    if (player !== currentPlayer) return
+    schedulePlayerResize()
   })
   resizeObserver.observe(container)
+  schedulePlayerResize()
 }
 
 async function connect(): Promise<void> {
@@ -143,8 +209,16 @@ async function connect(): Promise<void> {
   }
 }
 
-onMounted(() => void connect())
+onMounted(() => {
+  document.addEventListener('fullscreenchange', handleDocumentFullscreenChange)
+  document.addEventListener('webkitfullscreenchange', handleDocumentFullscreenChange)
+  window.addEventListener('resize', schedulePlayerResize)
+  void connect()
+})
 onBeforeUnmount(() => {
+  document.removeEventListener('fullscreenchange', handleDocumentFullscreenChange)
+  document.removeEventListener('webkitfullscreenchange', handleDocumentFullscreenChange)
+  window.removeEventListener('resize', schedulePlayerResize)
   requestController?.abort()
   destroyPlayer()
 })
@@ -172,7 +246,6 @@ onBeforeUnmount(() => {
         <strong>{{ deviceDisplayName }}</strong>
         <span>{{ device?.model || 'EZVIZ Camera' }}</span>
       </div>
-      <router-link to="/monitor">进入实时监测</router-link>
     </div>
   </div>
 </template>
@@ -184,16 +257,19 @@ onBeforeUnmount(() => {
 
 .dashboard-live__viewport {
   position: relative;
-  min-height: 326px;
+  width: 100%;
+  aspect-ratio: 16 / 9;
   overflow: hidden;
-  border: 1px solid #283c37;
+  border: 1px solid #354641;
   border-radius: 11px;
-  background: #0c1513;
+  background: #0d1211;
 }
 
 .dashboard-live__player {
+  position: absolute;
+  inset: 0;
   width: 100%;
-  min-height: 326px;
+  height: 100%;
 }
 
 .dashboard-live__placeholder {
@@ -205,17 +281,17 @@ onBeforeUnmount(() => {
   justify-content: center;
   flex-direction: column;
   gap: 12px;
-  color: #9db2ab;
-  background: radial-gradient(circle at center, #1a2c27 0, #0c1513 72%);
+  color: #8ea29c;
+  background: radial-gradient(circle at center, #202a27 0, #0d1211 72%);
 }
 
 .dashboard-live__placeholder strong {
-  color: #e4efeb;
+  color: var(--color-heading);
   font-size: 14px;
 }
 
 .dashboard-live__placeholder span {
-  color: #8fa49d;
+  color: var(--color-text-muted);
   font-size: 11px;
 }
 
@@ -245,7 +321,7 @@ onBeforeUnmount(() => {
   height: 6px;
   margin-right: 5px;
   border-radius: 50%;
-  background: #63d4a5;
+  background: var(--color-success);
 }
 
 .dashboard-live__footer {

@@ -10,7 +10,6 @@ const FallDetectionView = () => import('../views/FallDetectionView.vue')
 const FallRiskView = () => import('../views/FallRiskView.vue')
 const FraudRiskView = () => import('../views/FraudRiskView.vue')
 const ModulePlaceholderView = () => import('../views/ModulePlaceholderView.vue')
-const MonitorView = () => import('../views/MonitorView.vue')
 const SystemView = () => import('../views/SystemView.vue')
 
 const router = createRouter({
@@ -31,15 +30,6 @@ const router = createRouter({
           meta: {
             title: '综合首页',
             subtitle: '居家老人安全态势与平台运行概览',
-          },
-        },
-        {
-          path: 'monitor',
-          name: 'monitor',
-          component: MonitorView,
-          meta: {
-            title: '实时监测',
-            subtitle: '设备实时画面与状态入口',
           },
         },
         {

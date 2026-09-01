@@ -48,10 +48,10 @@ withDefaults(
   width: 64px;
   height: 64px;
   margin-bottom: 16px;
-  border: 1px solid #dce7e2;
+  border: 1px solid var(--color-border);
   border-radius: 18px;
-  color: #648077;
-  background: #f3f7f5;
+  color: var(--color-neutral-icon);
+  background: var(--color-neutral-soft);
 }
 
 strong {

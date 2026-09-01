@@ -3,7 +3,6 @@ import {
   Bell,
   Camera,
   CircleCheck,
-  DataLine,
   Lock,
   TrendCharts,
   Warning,
@@ -14,7 +13,6 @@ import { fetchAlgorithmsStatus } from '../api/algorithms'
 import { ApiRequestError, fetchDevices } from '../api/devices'
 import { fetchRiskEvents } from '../api/events'
 import { fetchFallRiskStatus } from '../api/fallRisk'
-import BackendStatusPanel from '../components/BackendStatusPanel.vue'
 import DashboardLiveMonitor from '../components/DashboardLiveMonitor.vue'
 import EmptyState from '../components/EmptyState.vue'
 import PageHeader from '../components/PageHeader.vue'
@@ -29,7 +27,7 @@ const initialFraudDetection = ref<AlgorithmResult | null>(null)
 const capabilities = ref<AlgorithmCapabilities | null>(null)
 const fallRiskReady = ref(false)
 const fallRiskModelReady = ref(false)
-const recentEvents = ref<AlgorithmResult[]>([])
+const riskEvents = ref<AlgorithmResult[]>([])
 const now = ref(Date.now())
 let refreshTimer: ReturnType<typeof setInterval> | null = null
 let clockTimer: ReturnType<typeof setInterval> | null = null
@@ -63,11 +61,11 @@ const fallDetectionValue = computed(() => {
 })
 const fallDetectionDescription = computed(() => {
   if (!fallResultFresh.value || !fallResult.value) {
-    return capabilities.value?.fall_detection === 'running' ? '真实模型持续运行' : '检测服务不可用'
+    return capabilities.value?.fall_detection === 'running' ? '跌倒监测持续运行' : '检测服务不可用'
   }
   if (fallResult.value.label === 'no_person') return '未检测到人员'
   if (fallResult.value.label === 'low_pose_confidence') return '姿态置信度不足'
-  return '真实实时检测'
+  return '跌倒监测正常运行'
 })
 const fallDetectionTone = computed<'neutral' | 'success' | 'warning' | 'danger'>(() => {
   if (!fallResultFresh.value || !fallResult.value) {
@@ -98,7 +96,7 @@ const fraudTone = computed<'neutral' | 'success' | 'warning' | 'danger'>(() => {
   return capabilities.value?.fraud_detection === 'running' ? 'success' : 'neutral'
 })
 const fraudDescription = computed(() =>
-  capabilities.value?.fraud_detection === 'running' ? '真实音频检测' : '诈骗检测 Worker 未就绪',
+  capabilities.value?.fraud_detection === 'running' ? '音频监测正常运行' : '诈骗检测 Worker 未就绪',
 )
 
 const safetyValue = computed(() => {
@@ -121,13 +119,63 @@ const safetyTone = computed<'neutral' | 'success' | 'warning' | 'danger'>(() => 
   return safetyValue.value === '监测中' ? 'success' : 'neutral'
 })
 const fallRiskValue = computed(() => (
-  fallRiskModelReady.value ? '核心模型已接入' : fallRiskReady.value ? '特征评估就绪' : '暂不可用'
+  fallRiskModelReady.value ? '评估中' : fallRiskReady.value ? '评估就绪' : '暂不可用'
 ))
 const fallRiskDescription = computed(() =>
   fallRiskModelReady.value
-    ? 'MotionCLIP 研究模型可用'
-    : fallRiskReady.value ? '步态与 SMPL-X 链路已接入' : '风险评估 Worker 未就绪',
+    ? '跌倒风险评估正常运行'
+    : fallRiskReady.value ? '步态评估链路已就绪' : '风险评估 Worker 未就绪',
 )
+
+interface RiskTrendPoint {
+  key: string
+  label: string
+  fallCount: number
+  fraudCount: number
+  total: number
+}
+
+function localDateKey(date: Date): string {
+  const year = date.getFullYear()
+  const month = String(date.getMonth() + 1).padStart(2, '0')
+  const day = String(date.getDate()).padStart(2, '0')
+  return `${year}-${month}-${day}`
+}
+
+const riskTrend = computed<RiskTrendPoint[]>(() => {
+  const today = new Date()
+  today.setHours(0, 0, 0, 0)
+  const points = Array.from({ length: 7 }, (_, index) => {
+    const date = new Date(today)
+    date.setDate(today.getDate() - (6 - index))
+    return {
+      key: localDateKey(date),
+      label: `${date.getMonth() + 1}/${date.getDate()}`,
+      fallCount: 0,
+      fraudCount: 0,
+      total: 0,
+    }
+  })
+  const pointByDay = new Map(points.map((point) => [point.key, point]))
+
+  for (const event of riskEvents.value) {
+    const timestamp = new Date(event.result_timestamp)
+    if (Number.isNaN(timestamp.getTime())) continue
+    const point = pointByDay.get(localDateKey(timestamp))
+    if (!point) continue
+    if (event.task === 'fall_detection') point.fallCount += 1
+    if (event.task === 'fraud_detection') point.fraudCount += 1
+    point.total = point.fallCount + point.fraudCount
+  }
+  return points
+})
+const riskTrendMax = computed(() => Math.max(1, ...riskTrend.value.map((point) => point.total)))
+const riskTrendTotal = computed(() => riskTrend.value.reduce((sum, point) => sum + point.total, 0))
+const recentEvents = computed(() => riskEvents.value.slice(0, 3))
+
+function trendBarHeight(total: number): string {
+  return total === 0 ? '0%' : `${Math.max(10, (total / riskTrendMax.value) * 100)}%`
+}
 
 async function loadOnlineDevices() {
   try {
@@ -172,9 +220,9 @@ async function loadFallRisk() {
 
 async function loadRecentEvents() {
   try {
-    recentEvents.value = await fetchRiskEvents(3)
+    riskEvents.value = await fetchRiskEvents(100)
   } catch {
-    recentEvents.value = []
+    riskEvents.value = []
   }
 }
 
@@ -208,7 +256,6 @@ onBeforeUnmount(() => {
     <PageHeader
       eyebrow="CARE OVERVIEW"
       title="居家安全综合态势"
-      description="统一汇聚真实设备、已接入算法能力、实时监测与风险事件；未接入能力保持明确标识。"
     />
 
     <section class="dashboard-status-grid" aria-label="核心状态概览">
@@ -256,12 +303,11 @@ onBeforeUnmount(() => {
             <span class="panel-card__kicker">LIVE MONITOR</span>
             <h2>实时监控</h2>
           </div>
-          <el-tag effect="plain" type="success">EZOPEN</el-tag>
+          <el-tag effect="dark" type="success">LIVE</el-tag>
         </div>
         <DashboardLiveMonitor />
       </article>
 
-      <BackendStatusPanel />
     </section>
 
     <section class="dashboard-secondary-grid">
@@ -271,14 +317,31 @@ onBeforeUnmount(() => {
             <span class="panel-card__kicker">RISK TREND</span>
             <h2>风险趋势</h2>
           </div>
-          <span class="panel-card__hint">等待真实数据源</span>
+          <span class="panel-card__hint">近 7 日 · {{ riskTrendTotal }} 条</span>
         </div>
-        <EmptyState
-          compact
-          title="暂无风险历史数据"
-          description="接入真实风险数据后再启用趋势图表。"
-          :icon="DataLine"
-        />
+        <div class="risk-trend" aria-label="近七日真实风险事件趋势">
+          <div class="risk-trend__legend">
+            <span><i class="risk-trend__dot risk-trend__dot--fall"></i>跌倒事件</span>
+            <span><i class="risk-trend__dot risk-trend__dot--fraud"></i>诈骗风险</span>
+          </div>
+          <div class="risk-trend__plot">
+            <div v-for="point in riskTrend" :key="point.key" class="risk-trend__point">
+              <span class="risk-trend__value">{{ point.total || '' }}</span>
+              <div class="risk-trend__track">
+                <div
+                  class="risk-trend__bar"
+                  :style="{ height: trendBarHeight(point.total) }"
+                  :title="`${point.label}：跌倒 ${point.fallCount}，诈骗 ${point.fraudCount}`"
+                >
+                  <i v-if="point.fallCount" class="risk-trend__segment risk-trend__segment--fall" :style="{ flex: point.fallCount }"></i>
+                  <i v-if="point.fraudCount" class="risk-trend__segment risk-trend__segment--fraud" :style="{ flex: point.fraudCount }"></i>
+                </div>
+              </div>
+              <time :datetime="point.key">{{ point.label }}</time>
+            </div>
+            <span v-if="riskTrendTotal === 0" class="risk-trend__empty">近 7 日暂无风险事件</span>
+          </div>
+        </div>
       </article>
 
       <article class="panel-card">
@@ -313,6 +376,11 @@ onBeforeUnmount(() => {
   margin-bottom: 20px;
   grid-template-columns: repeat(5, minmax(0, 1fr));
   gap: 16px;
+}
+
+.monitor-panel {
+  border-color: var(--color-card-emphasis-border);
+  box-shadow: var(--shadow-card-emphasis);
 }
 
 .dashboard-primary-grid,
@@ -371,11 +439,112 @@ onBeforeUnmount(() => {
 }
 
 .dashboard-primary-grid {
-  grid-template-columns: minmax(0, 1.9fr) minmax(300px, 0.9fr);
+  grid-template-columns: minmax(0, 1fr);
 }
 
 .dashboard-secondary-grid {
   grid-template-columns: minmax(0, 1.45fr) minmax(300px, 0.75fr);
+}
+
+.risk-trend {
+  margin-top: 18px;
+}
+
+.risk-trend__legend {
+  display: flex;
+  justify-content: flex-end;
+  gap: 18px;
+  color: var(--color-text-secondary);
+  font-size: 11px;
+}
+
+.risk-trend__legend span {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.risk-trend__dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 3px;
+}
+
+.risk-trend__dot--fall,
+.risk-trend__segment--fall {
+  background: var(--color-danger);
+}
+
+.risk-trend__dot--fraud,
+.risk-trend__segment--fraud {
+  background: var(--color-warning);
+}
+
+.risk-trend__plot {
+  position: relative;
+  display: grid;
+  height: 190px;
+  margin-top: 14px;
+  padding: 8px 8px 0;
+  border-top: 1px solid var(--color-border-light);
+  background: repeating-linear-gradient(
+    to bottom,
+    transparent 0,
+    transparent 44px,
+    var(--color-border-light) 45px
+  );
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.risk-trend__point {
+  display: grid;
+  min-width: 0;
+  grid-template-rows: 18px 1fr 25px;
+  text-align: center;
+}
+
+.risk-trend__value {
+  color: var(--color-text-secondary);
+  font-size: 11px;
+  font-weight: 650;
+}
+
+.risk-trend__track {
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  min-height: 0;
+}
+
+.risk-trend__bar {
+  display: flex;
+  width: min(30px, 64%);
+  min-height: 0;
+  overflow: hidden;
+  border-radius: 6px 6px 2px 2px;
+  flex-direction: column-reverse;
+}
+
+.risk-trend__segment {
+  display: block;
+  min-height: 4px;
+}
+
+.risk-trend__point time {
+  padding-top: 8px;
+  color: var(--color-text-muted);
+  font-size: 11px;
+}
+
+.risk-trend__empty {
+  position: absolute;
+  top: 76px;
+  right: 0;
+  left: 0;
+  color: var(--color-text-muted);
+  font-size: 12px;
+  text-align: center;
 }
 
 @media (max-width: 1450px) {

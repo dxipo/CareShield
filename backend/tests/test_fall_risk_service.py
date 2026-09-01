@@ -51,13 +51,28 @@ def assessment_payload() -> dict:
 def test_create_maps_contract_and_keeps_final_risk_unavailable() -> None:
     async def handler(request: httpx.Request) -> httpx.Response:
         assert request.headers["authorization"] == "Bearer private-worker-token"
-        return httpx.Response(202, json=assessment_payload())
+        request_payload = await request.aread()
+        assert b'"subject_name":"test subject"' in request_payload
+        assert b'"sex":"female"' in request_payload
+        assert b'"age":72' in request_payload
+        payload = assessment_payload()
+        payload.update({"subject_name": "test subject", "sex": "female", "age": 72})
+        return httpx.Response(202, json=payload)
 
     async def run() -> None:
         service = FallRiskService(settings(), transport=httpx.MockTransport(handler))
         result = await service.create(
-            FallRiskAssessmentCreate(height_cm=170, capture_duration_seconds=15)
+            FallRiskAssessmentCreate(
+                subject_name="test subject",
+                sex="female",
+                age=72,
+                height_cm=170,
+                capture_duration_seconds=15,
+            )
         )
+        assert result.subject_name == "test subject"
+        assert result.sex == "female"
+        assert result.age == 72
         assert result.risk_model_status == "not_installed"
         assert result.risk_result is None
         await service.close()
@@ -71,10 +86,14 @@ def test_uploaded_video_is_streamed_to_the_isolated_worker() -> None:
         assert request.headers["content-type"] == "video/mp4"
         assert request.url.path == "/internal/assessments/upload"
         assert request.url.params["source_filename"] == "walking.mp4"
+        assert request.url.params["subject_name"] == "test subject"
+        assert request.url.params["sex"] == "male"
+        assert request.url.params["age"] == "75"
         assert await request.aread() == b"real-video-bytes"
         payload = assessment_payload()
         payload["input_source"] = "uploaded_video"
         payload["source_filename"] = "walking.mp4"
+        payload.update({"subject_name": "test subject", "sex": "male", "age": 75})
         return httpx.Response(202, json=payload)
 
     async def content():
@@ -85,6 +104,9 @@ def test_uploaded_video_is_streamed_to_the_isolated_worker() -> None:
         service = FallRiskService(settings(), transport=httpx.MockTransport(handler))
         result = await service.create_from_video(
             FallRiskVideoAssessmentCreate(
+                subject_name="test subject",
+                sex="male",
+                age=75,
                 height_cm=170,
                 capture_duration_seconds=38,
                 source_filename="walking.mp4",
@@ -94,6 +116,9 @@ def test_uploaded_video_is_streamed_to_the_isolated_worker() -> None:
         )
         assert result.input_source == "uploaded_video"
         assert result.source_filename == "walking.mp4"
+        assert result.subject_name == "test subject"
+        assert result.sex == "male"
+        assert result.age == 75
         await service.close()
 
     asyncio.run(run())

@@ -52,6 +52,9 @@ export interface FallRiskAssessment {
   device_id: string | null
   input_source: 'camera' | 'uploaded_video'
   source_filename: string | null
+  subject_name: string | null
+  sex: 'male' | 'female' | null
+  age: number | null
   height_cm: number
   capture_duration_seconds: number
   created_at: string
@@ -116,7 +119,7 @@ export interface FallRiskModelResult {
     aggregation?: string
   }
   healthy_distance: number
-  risk_level: null
+  risk_level: 'low' | 'medium' | 'high' | null
   concepts: Record<string, FallRiskConceptResult>
   explanation: string
 }
@@ -128,7 +131,7 @@ export function fetchFallRiskStatus(signal?: AbortSignal): Promise<FallRiskWorke
 export function fetchFallRiskAssessments(
   signal?: AbortSignal,
 ): Promise<FallRiskAssessment[]> {
-  return requestJson('/api/fall-risk/assessments?limit=20', signal)
+  return requestJson('/api/fall-risk/assessments?limit=100', signal)
 }
 
 export function fetchFallRiskAssessment(
@@ -143,6 +146,9 @@ export function fallRiskArtifactUrl(assessmentId: string, artifactId: string): s
 }
 
 export function createFallRiskAssessment(
+  subjectName: string,
+  sex: 'male' | 'female',
+  age: number,
   heightCm: number,
   durationSeconds: number,
   signal?: AbortSignal,
@@ -151,6 +157,9 @@ export function createFallRiskAssessment(
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
+      subject_name: subjectName,
+      sex,
+      age,
       height_cm: heightCm,
       capture_duration_seconds: durationSeconds,
       device_id: null,
@@ -160,11 +169,17 @@ export function createFallRiskAssessment(
 
 export function createFallRiskVideoAssessment(
   file: File,
+  subjectName: string,
+  sex: 'male' | 'female',
+  age: number,
   heightCm: number,
   durationSeconds: number,
   signal?: AbortSignal,
 ): Promise<FallRiskAssessment> {
   const query = new URLSearchParams({
+    subject_name: subjectName,
+    sex,
+    age: String(age),
     height_cm: String(heightCm),
     capture_duration_seconds: String(durationSeconds),
     source_filename: file.name,

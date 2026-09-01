@@ -18,12 +18,18 @@ DEVICE = os.getenv("MOTIONCLIP_DEVICE", "auto").strip()
 CHECKPOINT = os.getenv(
     "MOTIONCLIP_CHECKPOINT", "/models/motionclip/checkpoint_best.pth.tar"
 ).strip()
+RISK_THRESHOLDS = Path(
+    os.getenv(
+        "MOTIONCLIP_RISK_THRESHOLDS",
+        "/opt/careshield/motionclip-config/carepd_encoder_only_risk_thresholds.json",
+    )
+).resolve()
 
 from app.model_service import MotionClipService  # noqa: E402
 
 
 try:
-    MODEL = MotionClipService(PROFILE, CHECKPOINT, DEVICE)
+    MODEL = MotionClipService(PROFILE, CHECKPOINT, DEVICE, RISK_THRESHOLDS)
     STARTUP_ERROR: str | None = None
 except Exception:
     MODEL = None

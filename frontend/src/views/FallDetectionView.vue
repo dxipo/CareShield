@@ -228,7 +228,7 @@ onBeforeUnmount(() => {
       </div>
       <p class="analysis-view__note">
         该画面由 AI Worker 在实际推理帧上绘制，因此人物框和骨架与算法输入一致；原始低延迟视频及声音仍可在
-        <router-link to="/monitor">实时监测</router-link> 中查看。
+        <router-link to="/dashboard">综合首页</router-link> 中查看。
       </p>
     </section>
 
@@ -240,13 +240,13 @@ onBeforeUnmount(() => {
         </div>
         <strong class="current-state__value">{{ stateLabel }}</strong>
         <p>
-          {{ classifiedResult ? '结果来自真实视频与 STGCN 模型，simulated=false' : '正在等待可分类的连续骨架序列，当前不会显示为“正常”' }}
+          {{ classifiedResult ? '视频分析与 STGCN 跌倒检测正常运行' : '正在等待可分类的连续骨架序列，当前不会显示为“正常”' }}
         </p>
         <p v-if="observationWarning" class="current-state__observation">
           当前观测：{{ stateLabelFor(observationWarning) }}。姿态短时丢失不会清除已确认的时序跌倒状态。
         </p>
         <div class="current-state__links">
-          <router-link to="/monitor">查看实时视频</router-link>
+          <router-link to="/dashboard">查看实时视频</router-link>
           <span>Realtime: {{ realtimeStatus }}</span>
         </div>
       </article>
@@ -276,7 +276,7 @@ onBeforeUnmount(() => {
       </div>
       <div class="metric-grid">
         <div><span>Fall Score</span><strong>{{ display(result?.score) }}</strong><small>uncalibrated STGCN score</small></div>
-        <div><span>Person Detected</span><strong>{{ display(metadata.person_detected) }}</strong><small>真实姿态结果</small></div>
+        <div><span>Person Detected</span><strong>{{ display(metadata.person_detected) }}</strong><small>当前姿态结果</small></div>
         <div><span>Keypoint Confidence</span><strong>{{ display(metadata.keypoint_confidence) }}</strong><small>mean confidence</small></div>
         <div><span>Source FPS</span><strong>{{ display(metadata.source_fps) }}</strong><small>camera stream</small></div>
         <div><span>Sample FPS</span><strong>{{ display(metadata.sample_fps) }}</strong><small>frame sampler</small></div>
@@ -290,7 +290,7 @@ onBeforeUnmount(() => {
     <section class="panel-card fall-history">
       <div class="panel-card__header">
         <div><span class="panel-card__kicker">RECENT STATE HISTORY</span><h2>最近检测状态</h2></div>
-        <span class="panel-card__hint">仅保留真实状态变化，不包含模拟结果</span>
+        <span class="panel-card__hint">仅记录有效状态变化</span>
       </div>
       <el-empty v-if="history.length === 0" description="暂无检测状态记录" />
       <ol v-else>
@@ -307,15 +307,15 @@ onBeforeUnmount(() => {
 </template>
 
 <style scoped>
-.fall-notice { margin: -8px 0 18px; padding: 11px 14px; border: 1px solid #eadbbf; border-radius: 9px; color: #755a2c; background: #fffaf0; font-size: 13px; }
-.fall-notice--error { border-color: #efd2cf; color: var(--color-danger); background: #fff3f1; }
+.fall-notice { margin: -8px 0 18px; padding: 11px 14px; border: 1px solid var(--color-warning-border); border-radius: 9px; color: var(--color-warning-text); background: var(--color-warning-soft); font-size: 13px; }
+.fall-notice--error { border-color: var(--color-danger-border); color: var(--color-danger-text); background: var(--color-danger-soft); }
 .fall-alert { display: flex; align-items: center; justify-content: space-between; gap: 20px; margin: -8px 0 18px; padding: 16px 20px; border: 1px solid #d93838; border-radius: 10px; color: #fff; background: #bd2525; box-shadow: 0 10px 24px rgba(189, 37, 37, .2); }
 .fall-alert div { display: grid; gap: 4px; }
 .fall-alert strong { font-size: 20px; }
 .fall-alert button { padding: 9px 15px; border: 1px solid rgba(255,255,255,.65); border-radius: 7px; color: #8e1717; background: #fff; font-weight: 700; cursor: pointer; }
 .analysis-view { margin-bottom: 20px; }
 .analysis-view__actions { display: flex; align-items: center; gap: 10px; }
-.preview-reconnect { padding: 7px 12px; border: 1px solid var(--color-border); border-radius: 7px; color: var(--color-heading); background: #fff; cursor: pointer; }
+.preview-reconnect { padding: 7px 12px; border: 1px solid var(--color-border); border-radius: 7px; color: var(--color-heading); background: var(--color-control-bg); cursor: pointer; }
 .analysis-canvas { position: relative; display: grid; min-height: 420px; margin-top: 18px; overflow: hidden; place-items: center; border: 1px solid #273a35; border-radius: 10px; background: #0b1110; }
 .analysis-canvas--alert { border: 3px solid #d93838; }
 .analysis-canvas img { display: block; width: 100%; max-height: 620px; object-fit: contain; }
@@ -326,7 +326,7 @@ onBeforeUnmount(() => {
 .fall-overview-grid { display: grid; grid-template-columns: minmax(0, .9fr) minmax(0, 1.1fr); gap: 20px; margin-bottom: 20px; }
 .current-state__value { display: block; margin-top: 32px; color: var(--color-heading); font-size: 38px; letter-spacing: .04em; }
 .current-state > p { margin: 10px 0 28px; color: var(--color-text-secondary); }
-.current-state > p.current-state__observation { margin-top: -16px; color: #a86d13; font-size: 12px; }
+.current-state > p.current-state__observation { margin-top: -16px; color: var(--color-warning); font-size: 12px; }
 .current-state__links { display: flex; justify-content: space-between; color: var(--color-text-muted); font-size: 12px; }
 .current-state__links a { color: var(--color-primary); font-weight: 650; }
 .fall-list { margin: 18px 0 0; }
@@ -335,7 +335,7 @@ onBeforeUnmount(() => {
 .fall-list dt { color: var(--color-text-secondary); }
 .fall-list dd { margin: 0; color: var(--color-heading); font-weight: 650; text-align: right; }
 .metric-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 14px; margin-top: 20px; }
-.metric-grid > div { padding: 17px; border: 1px solid var(--color-border-light); border-radius: 10px; background: #f8faf9; }
+.metric-grid > div { padding: 17px; border: 1px solid var(--color-border-light); border-radius: 10px; background: var(--color-surface-soft); }
 .metric-grid span, .metric-grid small { display: block; color: var(--color-text-muted); font-size: 11px; }
 .metric-grid strong { display: block; margin: 10px 0 7px; color: var(--color-heading); font-size: 21px; }
 .fall-history { margin-top: 20px; }

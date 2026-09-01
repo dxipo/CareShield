@@ -44,11 +44,16 @@ def test_height_and_timezone_are_validated() -> None:
 
 def test_uploaded_video_contract_is_explicit_and_bounded() -> None:
     request = FallRiskVideoAssessmentCreate(
+        subject_name="测试受试者",
+        sex="female",
+        age=72,
         height_cm=168,
         capture_duration_seconds=39,
         source_filename="walking.mp4",
     )
     assert request.source_filename == "walking.mp4"
+    assert request.subject_name == "测试受试者"
+    assert request.age == 72
     payload = assessment().model_copy(
         update={"input_source": "uploaded_video", "source_filename": "walking.mp4"}
     )
@@ -56,8 +61,23 @@ def test_uploaded_video_contract_is_explicit_and_bounded() -> None:
 
     with pytest.raises(ValidationError):
         FallRiskVideoAssessmentCreate(
+            subject_name="测试受试者",
+            sex="female",
+            age=72,
             height_cm=168,
             capture_duration_seconds=61,
+            source_filename="walking.mp4",
+        )
+
+
+def test_subject_demographics_are_bounded() -> None:
+    with pytest.raises(ValidationError):
+        FallRiskVideoAssessmentCreate(
+            subject_name="测试受试者",
+            sex="female",
+            age=121,
+            height_cm=168,
+            capture_duration_seconds=15,
             source_filename="walking.mp4",
         )
 

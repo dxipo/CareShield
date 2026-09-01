@@ -6,7 +6,7 @@ M3/M3.1 建立真实 H6c 的标准 HLS 与媒体探测链；M5.1 将浏览器切
 
 ```text
 CS-H6c -> EZVIZ Platform
-                |-- EZOPEN -> official ezuikit-js -> /monitor
+                |-- EZOPEN -> official ezuikit-js -> /dashboard
                 |-- temporary HLS -> ffprobe -> safe media metadata
                 `-- temporary HTTP-FLV -> AI Worker -> AI results
 ```
@@ -78,7 +78,7 @@ Frontend 构建前由 `npm run prepare:player` 将官方包内 `ezuikit_static` 
 访问：
 
 ```text
-http://localhost:5173/monitor
+http://localhost:5173/dashboard
 ```
 
 页面会选择真实在线 H6c、请求禁止缓存的 EZOPEN 会话并创建播放器。刷新/重连会销毁旧实例并获取新会话。首帧事件触发 `LIVE`，不再显示遮挡播放器控制栏的人工确认按钮。浏览器阻止自动播放声音时，用户通过官方音量控件开启声音。

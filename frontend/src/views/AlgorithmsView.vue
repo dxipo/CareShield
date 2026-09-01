@@ -26,9 +26,10 @@ const loadError = ref(false)
 let refreshTimer: ReturnType<typeof setInterval> | null = null
 
 const activeWorker = computed(() => latestWorkerStatus.value ?? worker.value)
-const activeCapabilities = computed(
-  () => activeWorker.value?.capabilities ?? capabilities.value,
-)
+// Each independent worker reports its own capability and correctly marks the
+// other algorithms as not_installed. Model availability must therefore use
+// the Backend aggregate instead of whichever worker heartbeat arrived last.
+const activeCapabilities = computed(() => capabilities.value)
 const socketLabel = computed(() =>
   realtimeStatus.value === 'connected' ? 'Connected' : 'Disconnected',
 )
@@ -92,7 +93,7 @@ onBeforeUnmount(() => {
     <PageHeader
       eyebrow="AI INFRASTRUCTURE"
       title="算法管理"
-      description="查看 AI Worker、统一实时通道与真实算法能力状态。M5 仅接入跌倒检测基线。"
+      description="查看 AI Worker、统一实时通道与已接入算法能力状态。"
     />
 
     <div v-if="loadError" class="status-notice status-notice--error">算法基础设施状态暂时不可用</div>
@@ -132,7 +133,7 @@ onBeforeUnmount(() => {
     <section class="panel-card algorithm-capabilities">
       <div class="panel-card__header">
         <div><span class="panel-card__kicker">ALGORITHM CAPABILITIES</span><h2>模型能力</h2></div>
-        <span class="panel-card__hint">状态来自 Worker heartbeat</span>
+        <span class="panel-card__hint">状态由 Backend 聚合在线 Worker 心跳</span>
       </div>
       <div class="capability-grid">
         <div><strong>Fall Detection</strong><el-tag :type="capabilityTag(activeCapabilities.fall_detection)" effect="plain">{{ capabilityLabel(activeCapabilities.fall_detection) }}</el-tag></div>
@@ -166,10 +167,10 @@ onBeforeUnmount(() => {
 .status-list dt { color: var(--color-text-secondary); }
 .status-list dd { margin: 0; color: var(--color-heading); font-weight: 650; text-align: right; }
 .capability-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; margin-top: 20px; }
-.capability-grid > div { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 17px; border: 1px solid var(--color-border-light); border-radius: 10px; background: #f8faf9; }
+.capability-grid > div { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 17px; border: 1px solid var(--color-border-light); border-radius: 10px; background: var(--color-surface-soft); }
 .pipeline-result { display: flex; flex-wrap: wrap; gap: 24px; margin-top: 20px; color: var(--color-text-secondary); }
 .pipeline-result strong { color: var(--color-heading); }
 .empty-copy { margin: 22px 0 2px; color: var(--color-text-muted); }
 .status-notice { margin: -12px 0 18px; padding: 10px 14px; border-radius: 8px; }
-.status-notice--error { color: #9e4038; background: #faefed; }
+.status-notice--error { color: var(--color-danger-text); background: var(--color-danger-soft); }
 </style>

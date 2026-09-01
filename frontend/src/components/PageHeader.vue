@@ -2,7 +2,7 @@
 defineProps<{
   eyebrow?: string
   title: string
-  description: string
+  description?: string
 }>()
 </script>
 
@@ -11,7 +11,7 @@ defineProps<{
     <div>
       <p v-if="eyebrow" class="page-header__eyebrow">{{ eyebrow }}</p>
       <h1>{{ title }}</h1>
-      <p class="page-header__description">{{ description }}</p>
+      <p v-if="description" class="page-header__description">{{ description }}</p>
     </div>
     <div v-if="$slots.actions" class="page-header__actions">
       <slot name="actions" />
@@ -41,7 +41,7 @@ defineProps<{
 
 .page-header__eyebrow {
   margin: 0 0 8px;
-  color: var(--color-primary);
+  color: var(--color-kicker);
   font-size: 12px;
   font-weight: 700;
   letter-spacing: 0.12em;
@@ -51,7 +51,7 @@ defineProps<{
 h1 {
   margin: 0;
   color: var(--color-heading);
-  font-size: 28px;
+  font-size: 30px;
   font-weight: 700;
   letter-spacing: -0.02em;
   line-height: 1.25;

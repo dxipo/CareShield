@@ -34,6 +34,8 @@ declare module 'ezuikit-js' {
       streamInfoCB: string
       audioInfo: string
       videoInfo: string
+      fullscreenChange: string
+      exitFullscreen: string
     }
 
     constructor(options: EZUIKitPlayerOptions)

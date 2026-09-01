@@ -27,7 +27,7 @@ onBeforeUnmount(disconnectRealtime)
   display: flex;
   min-width: 1180px;
   min-height: 100vh;
-  background: var(--color-page);
+  background: transparent;
 }
 
 .app-layout__workspace {

@@ -122,18 +122,18 @@ onBeforeUnmount(() => controller?.abort())
   width: 54px;
   height: 54px;
   border-radius: 15px;
-  color: #70837c;
-  background: #f1f4f3;
+  color: var(--color-neutral-icon);
+  background: var(--color-neutral-soft);
 }
 
 .backend-status__indicator--online {
   color: var(--color-success);
-  background: #eaf7f0;
+  background: var(--color-success-soft);
 }
 
 .backend-status__indicator--offline {
   color: var(--color-danger);
-  background: #fff0ee;
+  background: var(--color-danger-soft);
 }
 
 .backend-status__headline {

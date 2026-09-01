@@ -61,11 +61,14 @@ class FallRiskService:
         response = await self._request(
             "POST",
             "/internal/assessments/upload",
-            params={
+            params={key: value for key, value in {
+                "subject_name": request.subject_name,
+                "sex": request.sex,
+                "age": request.age,
                 "height_cm": request.height_cm,
                 "capture_duration_seconds": request.capture_duration_seconds,
                 "source_filename": request.source_filename,
-            },
+            }.items() if value is not None},
             headers=headers,
             content=content,
             timeout=120.0,

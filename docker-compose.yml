@@ -139,6 +139,10 @@ services:
       GVHMR_CHECKPOINTS_ROOT: /models/fall-risk/gvhmr/official-checkpoints
       GVHMR_BODY_MODELS_ROOT: /models/fall-risk/gvhmr/body_models
       MOTIONCLIP_INTERNAL_URL: http://motionclip-worker:8091
+      FALL_RISK_LLM_EXPLANATION_ENABLED: ${FALL_RISK_LLM_EXPLANATION_ENABLED:-true}
+      FALL_RISK_OLLAMA_BASE_URL: http://ollama:11434
+      FALL_RISK_OLLAMA_MODEL: ${FALL_RISK_OLLAMA_MODEL:-qwen3:4b}
+      FALL_RISK_LLM_TIMEOUT_SECONDS: ${FALL_RISK_LLM_TIMEOUT_SECONDS:-12}
     volumes:
       - ./models/fall-risk:/models/fall-risk:ro
       - ./models/fall-risk/gvhmr/official-checkpoints:/opt/gvhmr/inputs/checkpoints:ro
@@ -175,6 +179,7 @@ services:
       MOTIONCLIP_CHECKPOINT: /models/motionclip/checkpoint_best.pth.tar
       MOTIONCLIP_PROFILE: ${MOTIONCLIP_PROFILE:-carepd_four_dataset_explainable}
       MOTIONCLIP_DEVICE: ${MOTIONCLIP_DEVICE:-auto}
+      MOTIONCLIP_RISK_THRESHOLDS: /opt/careshield/motionclip-config/carepd_encoder_only_risk_thresholds.json
     volumes:
       - ${MOTIONCLIP_CHECKPOINT_PATH:-./models/fall-risk/motionclip/checkpoint_best.pth.tar}:/models/motionclip/checkpoint_best.pth.tar:ro
       - ${MOTIONCLIP_RUNTIME_ROOT:-./runtime/motionclip-env}:/runtime/motionclip:ro

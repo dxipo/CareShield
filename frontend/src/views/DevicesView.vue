@@ -366,7 +366,7 @@ onBeforeUnmount(() => {
   min-height: 270px;
   flex-direction: column;
   gap: 10px;
-  color: #648077;
+  color: var(--color-neutral-icon);
 }
 
 .devices-loading strong,
@@ -406,7 +406,7 @@ onBeforeUnmount(() => {
   gap: 12px;
   color: var(--color-text-secondary);
   font-size: 12px;
-  background: #fafcfb;
+  background: var(--color-surface-soft);
 }
 
 .devices-summary__divider {
@@ -423,12 +423,17 @@ onBeforeUnmount(() => {
   color: var(--color-text-secondary);
   font-size: 12px;
   font-weight: 650;
-  background: #f7faf9;
+  background: var(--color-surface-soft);
 }
 
 .devices-table :deep(td.el-table__cell) {
   padding-top: 14px;
   padding-bottom: 14px;
+}
+
+.devices-table :deep(.el-table-fixed-column--right) {
+  background: var(--color-fixed-column) !important;
+  box-shadow: -8px 0 14px rgb(31 41 55 / 5%);
 }
 
 .device-name-cell span {

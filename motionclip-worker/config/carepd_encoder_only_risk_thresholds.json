@@ -1,0 +1,14 @@
+{
+  "schema_version": 1,
+  "method": "ordered_healthy_reference_distance",
+  "source": "CARE-PD-like training-split ordinal threshold selection",
+  "label_mapping": "UPDRS 0=low, 1=medium, 2/3=high",
+  "training_walks": 141,
+  "training_subjects": 83,
+  "selection_macro_f1": 0.5053341384863125,
+  "clinical_risk_calibrated": false,
+  "thresholds": {
+    "low_medium": 0.020618330795740547,
+    "medium_high": 0.0557090900334255
+  }
+}

@@ -9,6 +9,8 @@ this service, so deployment does not depend on an uncommitted external source
 checkout. The checkpoint and isolated PyTorch runtime remain operator-provided
 and Git-ignored.
 
-The default profile reports a continuous healthy-reference distance and eight
-gait concepts. It is research-only and has no independently validated clinical
-risk thresholds, so `risk_level` remains `null`.
+The default profile reports a continuous healthy-reference distance, eight
+gait concepts, and a low/medium/high research risk grade. The ordered thresholds
+come from the CARE-PD-like training-split calibration bundled in `config/`.
+They are not independently clinically validated and the distance is not a fall
+probability.

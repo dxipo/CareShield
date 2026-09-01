@@ -6,6 +6,7 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 WORKDIR /app
 
 COPY motionclip-worker/app ./app
+COPY motionclip-worker/config /opt/careshield/motionclip-config
 
 EXPOSE 8091
 

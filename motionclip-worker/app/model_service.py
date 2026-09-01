@@ -9,14 +9,22 @@ import torch
 
 from app.input_adapter import load_gvhmr_windows
 from app.model_runtime import CONCEPT_LEVELS, load_model
+from app.risk_classification import classify_risk, load_risk_thresholds
 
 
 class MotionClipService:
-    def __init__(self, profile_name: str, checkpoint: str, device_name: str) -> None:
+    def __init__(
+        self,
+        profile_name: str,
+        checkpoint: str,
+        device_name: str,
+        risk_thresholds_path: Path,
+    ) -> None:
         if device_name == "auto":
             device_name = "cuda:0" if torch.cuda.is_available() else "cpu"
         self.device = torch.device(device_name)
         self.model, _ = load_model(checkpoint, self.device)
+        self.risk_calibration = load_risk_thresholds(risk_thresholds_path)
         self.model_info = {
             "profile_id": profile_name,
             "display_name": "CARE-PD 四数据集可解释模型",
@@ -53,6 +61,10 @@ class MotionClipService:
             with torch.inference_mode():
                 output = self.model(model_batch)
         distance = float(output["healthy_distance"].float().mean().cpu())
+        thresholds = self.risk_calibration["thresholds"]
+        if not isinstance(thresholds, dict):
+            raise RuntimeError("Risk thresholds are unavailable")
+        risk_level = classify_risk(distance, thresholds)
         probabilities = output["concept_probabilities"].float().mean(dim=0).cpu()
         concepts: dict[str, object] = {}
         for index, name in enumerate(self.model.concept_names):
@@ -76,15 +88,16 @@ class MotionClipService:
                 **metadata,
                 "aggregation": "equal_mean_of_window_distances_and_concept_probabilities",
                 "coordinate_note": "GVHMR global SMPL-X parameters mapped to CARE-PD SMPL joint order; no clinical domain calibration",
+                "risk_classification": self.risk_calibration,
             },
             "healthy_distance": distance,
-            "risk_level": None,
+            "risk_level": risk_level,
             "concepts": concepts,
-            "explanation": render_explanation(distance, concepts),
+            "explanation": render_explanation(distance, risk_level, concepts),
         }
 
 
-def render_explanation(distance: float, concepts: dict[str, object]) -> str:
+def render_explanation(distance: float, risk_level: str, concepts: dict[str, object]) -> str:
     concept_zh = {
         "step_length": "步幅", "walking_speed": "行走速度", "foot_lift": "足部抬升",
         "arm_swing": "摆臂幅度", "cadence": "步频", "step_width": "步宽",
@@ -94,12 +107,13 @@ def render_explanation(distance: float, concepts: dict[str, object]) -> str:
         "normal": "正常", "mild": "轻度异常", "moderate": "中度异常",
         "marked": "显著异常", "abnormal": "异常",
     }
+    risk_zh = {"low": "低风险", "medium": "中风险", "high": "高风险"}
     descriptions = [
         f"{concept_zh[name]}：{level_zh[value['predicted_level']]}"
         for name, value in concepts.items()
     ]
     return (
-        "总体风险：未标定\n"
+        f"跌倒风险等级：{risk_zh[risk_level]}\n"
         f"健康参考偏离程度：{distance:.6f}\n\n"
         "八项模型概念：" + "；".join(descriptions) + "。"
     )
