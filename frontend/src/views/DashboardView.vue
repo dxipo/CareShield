@@ -123,7 +123,7 @@ const fallRiskValue = computed(() => (
 ))
 const fallRiskDescription = computed(() =>
   fallRiskModelReady.value
-    ? '跌倒风险评估正常运行'
+    ? '跌倒风险分级与神经运动分析可用'
     : fallRiskReady.value ? '步态评估链路已就绪' : '风险评估 Worker 未就绪',
 )
 
@@ -211,7 +211,7 @@ async function loadFallRisk() {
   try {
     const status = await fetchFallRiskStatus()
     fallRiskReady.value = status.ready
-    fallRiskModelReady.value = status.risk_pipeline.status === 'ready'
+    fallRiskModelReady.value = status.kinecal_pipeline.status === 'ready'
   } catch {
     fallRiskReady.value = false
     fallRiskModelReady.value = false

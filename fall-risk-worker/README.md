@@ -11,12 +11,16 @@ PyTorch/CUDA 环境。具备授权资产时，两个流水线分别输出 MeTRAb
 GVHMR 的相机视角 SMPL-X、世界系 SMPL-X 和米制 3D 骨架。缺少任一必要资产时会明确
 报告 `not_configured`，不会生成模拟风险结果。
 
-最终跌倒风险模型尚未接入，因此所有评估均保持：
+GVHMR 完成后，编排器分别调用两个只读模型服务：
 
 ```text
-risk_model_status = not_installed
-risk_result = null
+world_skeleton_3d.npz -> kinecal-risk-worker -> fall_risk_result
+smplx_global_params.npz -> motionclip-worker -> risk_result
 ```
+
+前者输出 KINECAL `NF/FHs/FHm` 三类跌倒史队列的研究风险等级，后者输出
+CARE-PD 健康参考偏离度与神经运动概念。任一服务不可用时另一条结果仍可保留，
+assessment 明确标记为 `partial`，不会用静态数据填充缺失结果。
 
 本地模型资产均位于 Git 忽略的 `models/fall-risk/`。MeTRAbs small 模型来自作者
 官方短链，且仅允许非商业用途；GVHMR 与人体模型也有独立许可证限制。

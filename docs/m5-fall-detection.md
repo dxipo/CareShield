@@ -125,21 +125,25 @@ heartbeat policy. The following states are explicitly unavailable rather than
 safe: no person, low pose confidence, incomplete warm-up sequence, media loss,
 model failure, or Backend delivery failure.
 
-The `0.80` fallen threshold confirms on one classifier result because that
+The `0.65` fallen threshold confirms on one classifier result because that
 result already summarizes a two-second pose sequence; it is not a single-frame
-rule. Scores from `0.60` to `0.80` remain `SUSPECTED_FALL`. These thresholds and
+rule. Scores from `0.45` to `0.65` remain `SUSPECTED_FALL`. These thresholds and
 the uncalibrated score still require broader false-positive validation.
 
-Confirmed fall alerts are latched across later `no_person`, low-confidence, or
-recovering results until an operator acknowledges the current incident. Recent
-non-simulated state changes are stored as a bounded, expiring Redis list for
-operator review; repeated heartbeat states are deduplicated. This is diagnostic
+Confirmed fall alerts remain visible for at least 15 seconds and stay latched
+across later `no_person`, low-confidence, or recovering results. An operator can
+acknowledge the current incident immediately; otherwise the alert closes only
+after the minimum interval and an explicit NORMAL result. Recent
+non-simulated state changes are stored as a persistent, bounded Redis list for
+operator review; repeated heartbeat states are deduplicated. Redis AOF and the
+Compose data volume retain this list across service restarts. This is diagnostic
 history, not the later formal Event Center.
 
 The preview banner is controlled only by the latched alert, not by the raw
 detector state. Acknowledging an incident therefore removes `FALL DETECTED` on
 the next rendered frame even if the current two-second classifier window still
-has label `fallen`. A later, re-armed fall can raise a new alert.
+has label `fallen`. Without acknowledgement, short state reversals cannot make
+the alert flash and disappear. A later, re-armed fall can raise a new alert.
 
 The analysis preview is an in-memory MJPEG generated from the exact sampled
 inference frames. It draws person boxes and COCO17 skeletons, and displays a red

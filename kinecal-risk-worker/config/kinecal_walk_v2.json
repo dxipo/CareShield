@@ -1,0 +1,29 @@
+{
+  "model": {
+    "model_id": "kinecal-stgcnpp-walk",
+    "display_name": "KINECAL 步态跌倒风险分类器",
+    "architecture": "stgcnpp_action_adapter",
+    "version": "walk-v2-fold2",
+    "checkpoint_sha256": "e87bb1a6d323ba0bbc7b55f5e4605c81e53b9a439c925da07bde679005c4f223",
+    "training_domain": "KINECAL NF/FHs/FHm cohorts; CARE-PD pretrained ST-GCN++ encoder",
+    "clinical_risk_calibrated": false
+  },
+  "checkpoint_sha256": "e87bb1a6d323ba0bbc7b55f5e4605c81e53b9a439c925da07bde679005c4f223",
+  "duration_normalization": {
+    "mode": "global",
+    "mean_seconds": 17.18098258972168,
+    "std_seconds": 5.021009014678955,
+    "source": "clip120_durglobal_age0_scopeall.pt"
+  },
+  "action_calibration": {
+    "action": "3m-walk-Front-View",
+    "scale": [1.0, 0.8500000238418579, 0.8500000238418579],
+    "bias": [0.0, 0.15000000596046448, -0.5]
+  },
+  "review_below_confidence": 0.55,
+  "limitations": [
+    "该结果表示与 KINECAL 无跌倒史、单次跌倒史和多次跌倒史队列的相对分类，不是临床诊断",
+    "当前单段直线行走验证集中高风险类别敏感性有限，应结合步态参数、神经运动分析和专业评估",
+    "输入由单目 GVHMR 三维骨架适配到 Kinect 训练域，存在设备与姿态估计域差异"
+  ]
+}

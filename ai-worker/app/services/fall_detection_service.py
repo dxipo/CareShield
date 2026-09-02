@@ -80,7 +80,7 @@ class FallDetectionService:
             config.result_heartbeat_seconds,
             config.significant_score_delta,
         )
-        self.alert = FallAlertLatch()
+        self.alert = FallAlertLatch(config.alert_minimum_visible_seconds)
         self.reader = MediaReader(
             media_client,
             reconnect_seconds=settings.media_reconnect_seconds,
@@ -102,6 +102,7 @@ class FallDetectionService:
         self.fused_count = 0
         self.pose_crop_fallback_used = False
         self.sequence_progress = 0.0
+        self.last_fall_score: float | None = None
         self._task: asyncio.Task | None = None
         self._sample_count = 0
         self._publish_count = 0
@@ -171,6 +172,7 @@ class FallDetectionService:
                 "observation_window_seconds": self.settings.fall_config.observation_window_seconds,
                 "sequence_resampling": "linear_interpolation",
                 "sequence_progress": round(self.sequence_progress, 3),
+                "last_fall_score": _rounded(self.last_fall_score),
                 "person_count": self.person_count,
                 "detection_count": self.detection_count,
                 "pose_count": self.pose_count,
@@ -354,6 +356,7 @@ class FallDetectionService:
                 continue
 
             prediction, person_id = await self._classify_persons(sequence_persons)
+            self.last_fall_score = prediction.fall_score
             decision = self.decision.update(prediction.fall_score)
             self.alert.update(decision.state)
             self.detector_status = decision.state.value
@@ -507,6 +510,7 @@ class FallDetectionService:
                 "observation_window_seconds": self.settings.fall_config.observation_window_seconds,
                 "sequence_resampling": "linear_interpolation",
                 "sequence_progress": round(self.sequence_progress, 3),
+                "last_fall_score": _rounded(self.last_fall_score),
                 "source_fps": _rounded(self.source_fps),
                 "sample_fps": _rounded(self.sampled_fps),
                 "processing_fps": _rounded(self.processing_fps),

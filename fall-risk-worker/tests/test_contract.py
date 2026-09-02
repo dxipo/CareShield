@@ -8,6 +8,7 @@ from careshield_contracts import (
     PipelineState,
     PipelineStatus,
     FallRiskVideoAssessmentCreate,
+    KinecalFallRiskResult,
 )
 from pydantic import ValidationError
 
@@ -85,3 +86,38 @@ def test_subject_demographics_are_bounded() -> None:
 def test_quality_gate_can_explicitly_skip_the_risk_model() -> None:
     value = assessment().model_copy(update={"risk_model_status": "skipped"})
     assert value.risk_model_status == "skipped"
+
+
+def test_kinecal_result_requires_bounded_three_class_probabilities() -> None:
+    payload = {
+        "model": {
+            "model_id": "kinecal-stgcnpp-walk",
+            "display_name": "KINECAL risk",
+            "architecture": "stgcnpp_action_adapter",
+            "version": "walk-v2-fold2",
+            "checkpoint_sha256": "e" * 64,
+            "training_domain": "KINECAL",
+            "clinical_risk_calibrated": False,
+        },
+        "risk_level": "medium",
+        "predicted_class": 1,
+        "predicted_group": "FHs",
+        "class_probabilities": {"low": 0.2, "medium": 0.7, "high": 0.1},
+        "raw_class_probabilities": {"low": 0.3, "medium": 0.6, "high": 0.1},
+        "confidence": 0.7,
+        "action_type": "3m-walk-Front-View",
+        "source_frames": 300,
+        "source_fps": 30,
+        "source_duration_seconds": 10,
+        "clip_frames": 120,
+        "input_adapter": "gvhmr_world21_to_kinecal_h36m17_v1",
+        "input_quality": "usable",
+        "limitations": [],
+        "metadata": {},
+    }
+    result = KinecalFallRiskResult.model_validate(payload)
+    assert result.predicted_group == "FHs"
+
+    payload["class_probabilities"] = {"low": 0.2, "medium": 0.2, "high": 0.2}
+    with pytest.raises(ValidationError):
+        KinecalFallRiskResult.model_validate(payload)

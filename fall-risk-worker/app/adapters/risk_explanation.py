@@ -1,6 +1,6 @@
-"""Fact-grounded natural-language rendering for fall-risk results.
+"""Fact-grounded natural-language rendering for neuromotor results.
 
-MotionCLIP owns the grade, distance and concept outputs. Ollama may only phrase
+MotionCLIP owns the distance and concept outputs. Ollama may only phrase
 pre-approved biomechanical interpretations. Deterministic evidence and fallback
 text keep the explanation useful even when the local LLM is unavailable.
 """
@@ -31,7 +31,7 @@ LEVEL_LABELS = {
     "marked": "显著异常",
     "abnormal": "异常",
 }
-RISK_LABELS = {"low": "低风险", "medium": "中风险", "high": "高风险"}
+REFERENCE_BAND_LABELS = {"low": "较低", "medium": "中等", "high": "较高"}
 INTERPRETATION_HINTS = {
     "step_length": "反映前向推进幅度与步幅控制",
     "walking_speed": "反映整体移动能力与行走效率",
@@ -172,7 +172,7 @@ def authoritative_explanation(
     summary: str,
     recommendation: str,
 ) -> str:
-    risk = RISK_LABELS.get(result.risk_level, "待评估")
+    reference_band = REFERENCE_BAND_LABELS.get(result.risk_level, "待评估")
     window_count = result.metadata.get("window_count")
     window_description = (
         f"；综合分析 {int(window_count)} 个连续动作窗口"
@@ -181,7 +181,7 @@ def authoritative_explanation(
     )
     evidence = "\n".join(f"- {item}" for item in _key_evidence(result))
     return (
-        f"【模型结论】\n本次跌倒风险评估结果为{risk}。\n\n"
+        f"【神经运动功能概览】\n本次分析显示相对健康参考表征的偏离程度为{reference_band}。\n\n"
         f"【量化依据】\nMotionCLIP 健康参考偏离度为 {result.healthy_distance:.6f}，"
         f"{_threshold_description(result)}{window_description}。该偏离度是相对健康参考表征的距离，"
         "不等同于跌倒概率。\n\n"
@@ -236,11 +236,11 @@ def _threshold_description(result: FallRiskModelResult) -> str:
     except (KeyError, TypeError, ValueError):
         return "已按当前研究分级配置生成结果"
     if result.risk_level == "low":
-        return f"低于低/中风险研究阈值 {low_medium:.6f}"
+        return f"低于第一参考分界值 {low_medium:.6f}"
     if result.risk_level == "medium":
-        return f"位于研究分级区间 {low_medium:.6f}–{medium_high:.6f}"
+        return f"位于参考偏离区间 {low_medium:.6f}–{medium_high:.6f}"
     if result.risk_level == "high":
-        return f"高于中/高风险研究阈值 {medium_high:.6f}"
+        return f"高于第二参考分界值 {medium_high:.6f}"
     return "已按当前研究分级配置生成结果"
 
 

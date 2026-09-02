@@ -1,4 +1,5 @@
 from app.fall_detection.detector import FallState
+from app.fall_detection.config import FallDetectionConfig
 from app.fall_detection.stgcn_decision import STGCNDecisionEngine
 
 
@@ -23,3 +24,15 @@ def test_fallen_state_recovers_only_after_persistence() -> None:
 def test_score_is_bounded_and_thresholds_are_validated() -> None:
     engine = STGCNDecisionEngine()
     assert engine.update(2.0).score == 1.0
+
+
+def test_camera_validation_defaults_can_confirm_a_fall_window() -> None:
+    config = FallDetectionConfig()
+    engine = STGCNDecisionEngine(
+        config.stgcn_suspected_threshold,
+        config.stgcn_fallen_threshold,
+        confirmation_windows=config.stgcn_confirmation_windows,
+        recovery_windows=config.stgcn_recovery_windows,
+    )
+
+    assert engine.update(0.70).state == FallState.FALLEN

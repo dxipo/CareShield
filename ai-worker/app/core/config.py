@@ -57,15 +57,18 @@ def load_worker_settings() -> WorkerSettings:
         ),
         classifier_inference_hz=float(os.getenv("FALL_CLASSIFIER_INFERENCE_HZ", "2")),
         stgcn_suspected_threshold=float(
-            os.getenv("FALL_STGCN_SUSPECTED_THRESHOLD", "0.60")
+            os.getenv("FALL_STGCN_SUSPECTED_THRESHOLD", "0.45")
         ),
         stgcn_fallen_threshold=float(
-            os.getenv("FALL_STGCN_FALLEN_THRESHOLD", "0.80")
+            os.getenv("FALL_STGCN_FALLEN_THRESHOLD", "0.65")
         ),
         stgcn_confirmation_windows=int(
             os.getenv("FALL_STGCN_CONFIRMATION_WINDOWS", "1")
         ),
         stgcn_recovery_windows=int(os.getenv("FALL_STGCN_RECOVERY_WINDOWS", "5")),
+        alert_minimum_visible_seconds=float(
+            os.getenv("FALL_ALERT_MINIMUM_VISIBLE_SECONDS", "15")
+        ),
         tracking_minimum_iou=float(os.getenv("FALL_TRACKING_MINIMUM_IOU", "0.25")),
         tracking_maximum_missing_frames=int(
             os.getenv("FALL_TRACKING_MAXIMUM_MISSING_FRAMES", "30")

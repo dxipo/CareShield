@@ -52,7 +52,8 @@ def result_payload() -> FallRiskModelResult:
 
 def test_deterministic_explanation_is_natural_and_fact_grounded() -> None:
     explanation = deterministic_explanation(result_payload())
-    assert "本次跌倒风险评估结果为中风险" in explanation
+    assert "相对健康参考表征的偏离程度为中等" in explanation
+    assert "跌倒风险评估结果" not in explanation
     assert "步幅呈中度异常" in explanation
     assert "足部抬升" in explanation
     assert "MotionCLIP 健康参考偏离度为 0.030000" in explanation

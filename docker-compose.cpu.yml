@@ -7,5 +7,9 @@ services:
     gpus: !reset []
     environment:
       MOTIONCLIP_DEVICE: cpu
+  kinecal-risk-worker:
+    gpus: !reset []
+    environment:
+      KINECAL_DEVICE: cpu
   ollama:
     gpus: !reset []

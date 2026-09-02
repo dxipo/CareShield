@@ -35,7 +35,12 @@ class _PyAvSession:
 
             options = {"rw_timeout": "10000000"}
             if playback_url.startswith("rtsp://"):
-                options.update({"rtsp_transport": "tcp", "fflags": "nobuffer"})
+                options.update(
+                    {
+                        "rtsp_transport": "tcp",
+                        "fflags": "discardcorrupt",
+                    }
+                )
             self._container = av.open(
                 playback_url,
                 mode="r",
@@ -48,18 +53,32 @@ class _PyAvSession:
             self._stream = video_streams[0]
             self._stream.thread_type = "AUTO"
             self._frames = self._container.decode(self._stream)
+            self._synchronized = False
         except MediaReaderError:
             raise
         except Exception as exc:
             raise MediaReaderError("Unable to open temporary camera stream") from exc
 
     def next_frame(self) -> DecodedFrame | None:
-        try:
-            frame = next(self._frames)
-        except StopIteration:
-            return None
-        except Exception as exc:
-            raise MediaReaderError("Camera stream decoding failed") from exc
+        while True:
+            try:
+                frame = next(self._frames)
+            except StopIteration:
+                return None
+            except Exception as exc:
+                raise MediaReaderError("Camera stream decoding failed") from exc
+
+            # Do not expose pictures decoded from an incomplete HEVC reference
+            # chain. After a corrupt frame, wait for the next IDR before
+            # resuming inference and the operator preview.
+            if getattr(frame, "is_corrupt", False):
+                self._synchronized = False
+                continue
+            if not self._synchronized:
+                if not getattr(frame, "key_frame", False):
+                    continue
+                self._synchronized = True
+            break
 
         try:
             rate = float(self._stream.average_rate) if self._stream.average_rate else None

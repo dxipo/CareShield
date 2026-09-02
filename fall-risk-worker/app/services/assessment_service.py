@@ -26,6 +26,7 @@ from app.adapters.media_validation import (
     create_browser_preview,
     validate_video_capture,
 )
+from app.adapters.kinecal import KinecalRiskClient, KinecalRiskError
 from app.adapters.motionclip import MotionClipClient, MotionClipError
 from app.adapters.recorder import CaptureError, capture_video
 from app.adapters.relay_recording import BufferedCaptureError, RelayRecordingClient
@@ -89,6 +90,10 @@ class FallRiskAssessmentService:
             settings.motionclip_internal_url,
             settings.shared_token,
         )
+        self.kinecal = KinecalRiskClient(
+            settings.kinecal_internal_url,
+            settings.shared_token,
+        )
         self.risk_explanation = RiskExplanationClient(
             enabled=settings.risk_explanation_enabled,
             base_url=settings.risk_explanation_base_url,
@@ -133,6 +138,16 @@ class FallRiskAssessmentService:
                 ),
                 message=(None if self.motionclip.ready else "MotionCLIP worker is unavailable"),
             ),
+            kinecal_pipeline=PipelineState(
+                status=(
+                    PipelineStatus.READY
+                    if self.kinecal.ready
+                    else PipelineStatus.FAILED
+                    if self.kinecal.configured
+                    else PipelineStatus.NOT_CONFIGURED
+                ),
+                message=(None if self.kinecal.ready else "KINECAL risk worker is unavailable"),
+            ),
             missing_requirements=missing,
         )
 
@@ -142,6 +157,7 @@ class FallRiskAssessmentService:
         if self._active_task is not None and not self._active_task.done():
             raise AssessmentBusyError("Another fall-risk assessment is already running")
         await self.motionclip.refresh_health()
+        await self.kinecal.refresh_health()
         assessment = self._new_assessment(
             subject_name=request.subject_name,
             sex=request.sex,
@@ -169,6 +185,7 @@ class FallRiskAssessmentService:
         if content_length is not None and content_length > self.MAX_VIDEO_BYTES:
             raise VideoUploadError("Video upload exceeds the 512 MB limit")
         await self.motionclip.refresh_health()
+        await self.kinecal.refresh_health()
         safe_filename = Path(request.source_filename).name.replace("\n", " ").replace("\r", " ")
         if not safe_filename.lower().endswith(".mp4"):
             raise VideoUploadError("Only MP4 video uploads are supported")
@@ -241,6 +258,7 @@ class FallRiskAssessmentService:
         now = datetime.now(timezone.utc)
         gvhmr_ready = self._gvhmr_ready()
         risk_ready = gvhmr_ready and self.motionclip.ready
+        kinecal_ready = gvhmr_ready and self.kinecal.ready
         return FallRiskAssessment(
             assessment_id=uuid4(),
             status=AssessmentStatus.QUEUED,
@@ -264,6 +282,11 @@ class FallRiskAssessmentService:
                 message=None if risk_ready else "MotionCLIP 需要可用的 GVHMR 参数与独立模型 Worker",
             ),
             risk_model_status="waiting" if risk_ready else "not_configured",
+            kinecal_pipeline=PipelineState(
+                status=PipelineStatus.WAITING if kinecal_ready else PipelineStatus.NOT_CONFIGURED,
+                message=None if kinecal_ready else "KINECAL 风险分类需要世界系 3D 骨架与独立模型 Worker",
+            ),
+            kinecal_model_status="waiting" if kinecal_ready else "not_configured",
         )
 
     async def close(self) -> None:
@@ -275,6 +298,7 @@ class FallRiskAssessmentService:
                 pass
         await self.media.close()
         await self.motionclip.close()
+        await self.kinecal.close()
         await self.risk_explanation.close()
         if self.recordings is not None:
             await self.recordings.close()
@@ -306,49 +330,75 @@ class FallRiskAssessmentService:
             raise AssessmentBusyError("Another fall-risk assessment is already running")
         assessment = await self.store.get(assessment_id)
         await self.motionclip.refresh_health()
-        if not self.motionclip.ready:
-            raise WorkerNotReadyError("MotionCLIP worker is unavailable")
+        await self.kinecal.refresh_health()
+        if not self.motionclip.ready and not self.kinecal.ready:
+            raise WorkerNotReadyError("Fall-risk model workers are unavailable")
         parameters = self.store.directory(assessment_id) / "gvhmr" / "smplx_global_params.npz"
+        skeleton = self.store.directory(assessment_id) / "gvhmr" / "world_skeleton_3d.npz"
         if (
             assessment.gvhmr_pipeline.status is not PipelineStatus.COMPLETED
-            or not parameters.is_file()
+            or (self.motionclip.ready and not parameters.is_file())
+            or (self.kinecal.ready and not skeleton.is_file())
         ):
-            raise RiskModelInputError("Completed GVHMR parameters are required")
-        assessment = assessment.model_copy(
-            update={
-                "status": AssessmentStatus.PROCESSING_RISK,
-                "stage": "运行 MotionCLIP 可解释风险模型",
-                "progress": 0.92,
-                "risk_pipeline": PipelineState(status=PipelineStatus.RUNNING, progress=0.2),
-                "risk_model_status": "running",
-                "risk_result": None,
-                "error": None,
-            }
-        )
+            raise RiskModelInputError("Completed GVHMR skeleton and parameters are required")
+        rerun_update = {
+            "status": AssessmentStatus.PROCESSING_RISK,
+            "stage": "运行跌倒风险与神经运动分析",
+            "progress": 0.92,
+            "risk_pipeline": PipelineState(
+                status=PipelineStatus.RUNNING if self.motionclip.ready else PipelineStatus.NOT_CONFIGURED,
+                progress=0.2 if self.motionclip.ready else 0.0,
+            ),
+            "risk_model_status": "running" if self.motionclip.ready else "not_configured",
+            "kinecal_pipeline": PipelineState(
+                status=PipelineStatus.RUNNING if self.kinecal.ready else PipelineStatus.NOT_CONFIGURED,
+                progress=0.2 if self.kinecal.ready else 0.0,
+            ),
+            "kinecal_model_status": "running" if self.kinecal.ready else "not_configured",
+            "error": None,
+        }
+        if self.motionclip.ready:
+            rerun_update["risk_result"] = None
+        if self.kinecal.ready:
+            rerun_update["fall_risk_result"] = None
+        assessment = assessment.model_copy(update=rerun_update)
         await self.store.save(assessment)
-        try:
-            result = await self.motionclip.predict(assessment_id)
-            result = await self.risk_explanation.explain(result)
-            assessment = assessment.model_copy(
-                update={
-                    "status": AssessmentStatus.COMPLETED,
-                    "stage": "MotionCLIP 分析完成（研究结果，未临床标定）",
-                    "progress": 1.0,
+        if self.kinecal.ready:
+            try:
+                result = await self.kinecal.predict(assessment_id)
+                assessment = assessment.model_copy(update={
+                    "kinecal_pipeline": PipelineState(status=PipelineStatus.COMPLETED, progress=1.0),
+                    "kinecal_model_status": "completed",
+                    "fall_risk_result": result,
+                })
+            except KinecalRiskError as exc:
+                assessment = assessment.model_copy(update={
+                    "kinecal_pipeline": PipelineState(status=PipelineStatus.FAILED, message=str(exc)),
+                    "kinecal_model_status": "failed",
+                })
+        if self.motionclip.ready:
+            try:
+                result = await self.motionclip.predict(assessment_id)
+                result = await self.risk_explanation.explain(result)
+                assessment = assessment.model_copy(update={
                     "risk_pipeline": PipelineState(status=PipelineStatus.COMPLETED, progress=1.0),
                     "risk_model_status": "completed",
                     "risk_result": result,
-                }
-            )
-        except MotionClipError as exc:
-            assessment = assessment.model_copy(
-                update={
-                    "status": AssessmentStatus.PARTIAL,
-                    "stage": "特征提取完成，风险模型结果不可用",
-                    "progress": 1.0,
+                })
+            except MotionClipError as exc:
+                assessment = assessment.model_copy(update={
                     "risk_pipeline": PipelineState(status=PipelineStatus.FAILED, message=str(exc)),
                     "risk_model_status": "failed",
-                }
-            )
+                })
+        complete = (
+            assessment.kinecal_pipeline.status is PipelineStatus.COMPLETED
+            and assessment.risk_pipeline.status is PipelineStatus.COMPLETED
+        )
+        assessment = assessment.model_copy(update={
+            "status": AssessmentStatus.COMPLETED if complete else AssessmentStatus.PARTIAL,
+            "stage": "跌倒风险与神经运动分析完成" if complete else "部分风险分析结果可用",
+            "progress": 1.0,
+        })
         await self.store.save(assessment)
         return assessment
 
@@ -461,6 +511,11 @@ class FallRiskAssessmentService:
                             message="输入姿态质量不足，未运行 MotionCLIP",
                         ),
                         "risk_model_status": "skipped",
+                        "kinecal_pipeline": PipelineState(
+                            status=PipelineStatus.SKIPPED,
+                            message="输入姿态质量不足，未运行 KINECAL 风险分类",
+                        ),
+                        "kinecal_model_status": "skipped",
                     }
                 )
                 await self.store.save(assessment)
@@ -486,6 +541,42 @@ class FallRiskAssessmentService:
                         "artifacts": assessment.artifacts + self._gvhmr_artifacts(gvhmr_output),
                     }
                 )
+                if self.kinecal.ready:
+                    assessment = assessment.model_copy(
+                        update={
+                            "status": AssessmentStatus.PROCESSING_RISK,
+                            "stage": "评估跌倒风险等级",
+                            "progress": 0.88,
+                            "kinecal_pipeline": PipelineState(
+                                status=PipelineStatus.RUNNING,
+                                progress=0.2,
+                            ),
+                            "kinecal_model_status": "running",
+                        }
+                    )
+                    await self.store.save(assessment)
+                    try:
+                        fall_risk_result = await self.kinecal.predict(assessment.assessment_id)
+                        assessment = assessment.model_copy(
+                            update={
+                                "kinecal_pipeline": PipelineState(
+                                    status=PipelineStatus.COMPLETED,
+                                    progress=1.0,
+                                ),
+                                "kinecal_model_status": "completed",
+                                "fall_risk_result": fall_risk_result,
+                            }
+                        )
+                    except KinecalRiskError as exc:
+                        assessment = assessment.model_copy(
+                            update={
+                                "kinecal_pipeline": PipelineState(
+                                    status=PipelineStatus.FAILED,
+                                    message=str(exc),
+                                ),
+                                "kinecal_model_status": "failed",
+                            }
+                        )
                 if self.motionclip.ready:
                     assessment = assessment.model_copy(
                         update={
@@ -528,13 +619,19 @@ class FallRiskAssessmentService:
                 update={
                     "status": (
                         AssessmentStatus.COMPLETED
-                        if assessment.risk_pipeline.status is PipelineStatus.COMPLETED
+                        if (
+                            assessment.risk_pipeline.status is PipelineStatus.COMPLETED
+                            and assessment.kinecal_pipeline.status is PipelineStatus.COMPLETED
+                        )
                         else AssessmentStatus.PARTIAL
                     ),
                     "stage": (
-                        "MotionCLIP 分析完成（研究结果，未临床标定）"
-                        if assessment.risk_pipeline.status is PipelineStatus.COMPLETED
-                        else "特征提取完成，风险模型结果不可用"
+                        "跌倒风险与神经运动分析完成"
+                        if (
+                            assessment.risk_pipeline.status is PipelineStatus.COMPLETED
+                            and assessment.kinecal_pipeline.status is PipelineStatus.COMPLETED
+                        )
+                        else "特征提取完成，部分风险分析结果可用"
                     ),
                     "progress": 1.0,
                     "completed_at": datetime.now(timezone.utc),
@@ -590,6 +687,17 @@ class FallRiskAssessmentService:
                     status=PipelineStatus.FAILED,
                     message="MotionCLIP inference failed",
                 )
+            kinecal_pipeline = assessment.kinecal_pipeline
+            if kinecal_pipeline.status is PipelineStatus.WAITING:
+                kinecal_pipeline = PipelineState(
+                    status=PipelineStatus.SKIPPED,
+                    message="世界系骨架未就绪，KINECAL 风险分类未启动",
+                )
+            elif kinecal_pipeline.status is PipelineStatus.RUNNING:
+                kinecal_pipeline = PipelineState(
+                    status=PipelineStatus.FAILED,
+                    message="KINECAL fall-risk inference failed",
+                )
             assessment = assessment.model_copy(
                 update={
                     "status": AssessmentStatus.FAILED,
@@ -599,10 +707,16 @@ class FallRiskAssessmentService:
                     "gait_pipeline": gait_pipeline,
                     "gvhmr_pipeline": gvhmr_pipeline,
                     "risk_pipeline": risk_pipeline,
+                    "kinecal_pipeline": kinecal_pipeline,
                     "risk_model_status": (
                         "failed"
                         if risk_pipeline.status is PipelineStatus.FAILED
                         else assessment.risk_model_status
+                    ),
+                    "kinecal_model_status": (
+                        "failed"
+                        if kinecal_pipeline.status is PipelineStatus.FAILED
+                        else assessment.kinecal_model_status
                     ),
                 }
             )
@@ -838,10 +952,14 @@ class FallRiskAssessmentService:
             missing.append("Licensed SMPL-X neutral body model")
         if not self.motionclip.ready:
             missing.append("MotionCLIP model worker or checkpoint")
+        if not self.kinecal.ready:
+            missing.append("KINECAL ST-GCN++ model worker or checkpoint")
         return missing
 
     async def refresh_motionclip(self) -> bool:
-        return await self.motionclip.refresh_health()
+        motionclip_ready = await self.motionclip.refresh_health()
+        await self.kinecal.refresh_health()
+        return motionclip_ready
 
     def _hmr2_checkpoint_valid(self) -> bool:
         checkpoint = (

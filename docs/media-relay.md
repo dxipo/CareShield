@@ -4,7 +4,7 @@ CareShield uses one EZVIZ standard-stream reader for server-side algorithms:
 
 ```text
 EZVIZ HTTP-FLV (HEVC + AAC)
-  -> media-relay (PyAV 18 / FFmpeg 8 packet remux; no decode)
+  -> media-relay (PyAV 18: HEVC decode + low-latency H.264 encode; AAC remux)
   -> MediaMTX RTSP path `careshield`
      |-> M5 realtime fall-detection Worker
      |-> M6 fall-risk Worker
@@ -19,11 +19,12 @@ browser latency and controls are better suited to interactive viewing.
 
 The H6c HTTP-FLV response carries HEVC with the non-standard FLV codec id 12.
 Debian FFmpeg 5.1 and 7.1 report that codec as unsupported. PyAV 18.1.0 bundles a
-newer FFmpeg that recognizes it. The relay applies the `hevc_mp4toannexb`
-bitstream filter before muxing HEVC/AAC into RTSP, without video decoding or
-re-encoding. This conversion is required: forwarding the FLV length-prefixed NAL
-units directly to RTSP produces reference-frame errors and green/corrupted decoded
-images. Stream URLs and credentials are never logged.
+newer FFmpeg that recognizes it. Packet-only Annex-B conversion was tested but
+still produced broken HEVC reference chains after relay reconnects. The relay now
+decodes the source once, waits for a clean keyframe, and encodes H.264 with
+`ultrafast`/`zerolatency`, a one-second GOP and no B-frames. AAC remains packet
+remuxed. Workers therefore share one stable source connection and one normalized
+video timeline. Stream URLs and credentials are never logged.
 
 ## Timestamped assessment capture
 

@@ -166,7 +166,7 @@ SMPL-X 参数          global_orient/body_pose/transl, 150 frames, all finite
 ## Shared media and capture timing
 
 M5 和 M6 不再分别向萤石申请并占用播放会话。`media-relay` 读取一次 HTTP-FLV，使用
-PyAV 18 / FFmpeg 8 的 `hevc_mp4toannexb` 将真实 H.265 + AAC 包无解码转封装到
+PyAV 18 / FFmpeg 8 将真实 H.265 解码并低延迟编码为 H.264，AAC 转封装到
 MediaMTX RTSP。MediaMTX
 对多个 Worker 扇出，并将 2 秒 fMP4 分片保留 2 分钟。
 

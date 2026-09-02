@@ -83,10 +83,11 @@ services:
       FALL_OBSERVATION_WINDOW_SECONDS: ${FALL_OBSERVATION_WINDOW_SECONDS:-2.0}
       FALL_RESULT_HEARTBEAT_SECONDS: ${FALL_RESULT_HEARTBEAT_SECONDS:-1}
       FALL_CLASSIFIER_INFERENCE_HZ: ${FALL_CLASSIFIER_INFERENCE_HZ:-2}
-      FALL_STGCN_SUSPECTED_THRESHOLD: ${FALL_STGCN_SUSPECTED_THRESHOLD:-0.60}
-      FALL_STGCN_FALLEN_THRESHOLD: ${FALL_STGCN_FALLEN_THRESHOLD:-0.80}
+      FALL_STGCN_SUSPECTED_THRESHOLD: ${FALL_STGCN_SUSPECTED_THRESHOLD:-0.45}
+      FALL_STGCN_FALLEN_THRESHOLD: ${FALL_STGCN_FALLEN_THRESHOLD:-0.65}
       FALL_STGCN_CONFIRMATION_WINDOWS: ${FALL_STGCN_CONFIRMATION_WINDOWS:-1}
       FALL_STGCN_RECOVERY_WINDOWS: ${FALL_STGCN_RECOVERY_WINDOWS:-5}
+      FALL_ALERT_MINIMUM_VISIBLE_SECONDS: ${FALL_ALERT_MINIMUM_VISIBLE_SECONDS:-15}
       FALL_TRACKING_MINIMUM_IOU: ${FALL_TRACKING_MINIMUM_IOU:-0.25}
       FALL_TRACKING_MAXIMUM_MISSING_FRAMES: ${FALL_TRACKING_MAXIMUM_MISSING_FRAMES:-30}
       FALL_TRACKING_MAXIMUM_CENTER_DISTANCE: ${FALL_TRACKING_MAXIMUM_CENTER_DISTANCE:-0.45}
@@ -139,6 +140,7 @@ services:
       GVHMR_CHECKPOINTS_ROOT: /models/fall-risk/gvhmr/official-checkpoints
       GVHMR_BODY_MODELS_ROOT: /models/fall-risk/gvhmr/body_models
       MOTIONCLIP_INTERNAL_URL: http://motionclip-worker:8091
+      KINECAL_INTERNAL_URL: http://kinecal-risk-worker:8092
       FALL_RISK_LLM_EXPLANATION_ENABLED: ${FALL_RISK_LLM_EXPLANATION_ENABLED:-true}
       FALL_RISK_OLLAMA_BASE_URL: http://ollama:11434
       FALL_RISK_OLLAMA_MODEL: ${FALL_RISK_OLLAMA_MODEL:-qwen3:4b}
@@ -197,6 +199,35 @@ services:
       timeout: 5s
       retries: 12
       start_period: 90s
+    restart: unless-stopped
+
+  kinecal-risk-worker:
+    build:
+      context: .
+      dockerfile: kinecal-risk-worker/Dockerfile
+    environment:
+      AI_WORKER_SHARED_TOKEN: ${AI_WORKER_SHARED_TOKEN:?Set AI_WORKER_SHARED_TOKEN in .env}
+      FALL_RISK_DATA_ROOT: /data/fall-risk
+      KINECAL_CHECKPOINT: /models/kinecal/kinecal_walk_v2_best.pt
+      KINECAL_PROFILE: /opt/careshield/kinecal-config/kinecal_walk_v2.json
+      KINECAL_DEVICE: ${KINECAL_DEVICE:-auto}
+    volumes:
+      - ${KINECAL_CHECKPOINT_PATH:-./models/fall-risk/kinecal/kinecal_walk_v2_best.pt}:/models/kinecal/kinecal_walk_v2_best.pt:ro
+      - ${KINECAL_RUNTIME_ROOT:-./runtime/kinecal-env}:/runtime/kinecal:ro
+      - fall-risk-data:/data/fall-risk:ro
+    gpus: all
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "/runtime/kinecal/bin/python",
+          "-c",
+          "import json,urllib.request; assert json.load(urllib.request.urlopen('http://localhost:8092/health'))['ready']",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 45s
     restart: unless-stopped
 
   fraud-worker:

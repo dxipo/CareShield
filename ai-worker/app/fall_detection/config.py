@@ -24,12 +24,15 @@ class FallDetectionConfig:
     observation_window_seconds: float = 2.0
     minimum_sequence_valid_ratio: float = 0.80
     classifier_inference_hz: float = 2.0
-    stgcn_suspected_threshold: float = 0.60
-    stgcn_fallen_threshold: float = 0.80
+    # Baseline heuristic operating points tuned for replay/camera validation.
+    # The scores are not clinically calibrated probabilities.
+    stgcn_suspected_threshold: float = 0.45
+    stgcn_fallen_threshold: float = 0.65
     # One result already summarizes a two-second temporal sequence; this is not
     # equivalent to a single-frame fall rule.
     stgcn_confirmation_windows: int = 1
     stgcn_recovery_windows: int = 5
+    alert_minimum_visible_seconds: float = 15.0
     tracking_minimum_iou: float = 0.25
     tracking_maximum_missing_frames: int = 30
     tracking_maximum_center_distance: float = 0.45
@@ -58,6 +61,8 @@ class FallDetectionConfig:
             raise ValueError("observation window must be positive")
         if self.classifier_inference_hz <= 0:
             raise ValueError("classifier_inference_hz must be positive")
+        if self.alert_minimum_visible_seconds < 0:
+            raise ValueError("alert minimum visible time cannot be negative")
         if self.stgcn_suspected_threshold > self.stgcn_fallen_threshold:
             raise ValueError("suspected threshold cannot exceed fallen threshold")
         if self.stgcn_confirmation_windows < 1 or self.stgcn_recovery_windows < 1:

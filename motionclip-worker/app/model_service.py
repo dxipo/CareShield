@@ -107,13 +107,13 @@ def render_explanation(distance: float, risk_level: str, concepts: dict[str, obj
         "normal": "正常", "mild": "轻度异常", "moderate": "中度异常",
         "marked": "显著异常", "abnormal": "异常",
     }
-    risk_zh = {"low": "低风险", "medium": "中风险", "high": "高风险"}
+    reference_zh = {"low": "较低", "medium": "中等", "high": "较高"}
     descriptions = [
         f"{concept_zh[name]}：{level_zh[value['predicted_level']]}"
         for name, value in concepts.items()
     ]
     return (
-        f"跌倒风险等级：{risk_zh[risk_level]}\n"
+        f"神经运动功能参考偏离程度：{reference_zh[risk_level]}\n"
         f"健康参考偏离程度：{distance:.6f}\n\n"
         "八项模型概念：" + "；".join(descriptions) + "。"
     )

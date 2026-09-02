@@ -77,6 +77,9 @@ export interface FallRiskAssessment {
   }>
   risk_model_status: 'not_installed' | 'not_configured' | 'waiting' | 'running' | 'completed' | 'failed' | 'skipped'
   risk_result: FallRiskModelResult | null
+  kinecal_pipeline: PipelineState
+  kinecal_model_status: 'not_installed' | 'not_configured' | 'waiting' | 'running' | 'completed' | 'failed' | 'skipped'
+  fall_risk_result: KinecalFallRiskResult | null
   error: string | null
 }
 
@@ -88,6 +91,7 @@ export interface FallRiskWorkerStatus {
   gait_pipeline: PipelineState
   gvhmr_pipeline: PipelineState
   risk_pipeline: PipelineState
+  kinecal_pipeline: PipelineState
   missing_requirements: string[]
 }
 
@@ -122,6 +126,33 @@ export interface FallRiskModelResult {
   risk_level: 'low' | 'medium' | 'high' | null
   concepts: Record<string, FallRiskConceptResult>
   explanation: string
+}
+
+export interface KinecalFallRiskResult {
+  model: {
+    model_id: string
+    display_name: string
+    architecture: 'stgcnpp_action_adapter'
+    version: string
+    checkpoint_sha256: string
+    training_domain: string
+    clinical_risk_calibrated: boolean
+  }
+  risk_level: 'low' | 'medium' | 'high'
+  predicted_class: 0 | 1 | 2
+  predicted_group: 'NF' | 'FHs' | 'FHm'
+  class_probabilities: Record<'low' | 'medium' | 'high', number>
+  raw_class_probabilities: Record<'low' | 'medium' | 'high', number>
+  confidence: number
+  action_type: '3m-walk-Front-View'
+  source_frames: number
+  source_fps: number
+  source_duration_seconds: number
+  clip_frames: 120
+  input_adapter: string
+  input_quality: 'usable' | 'review'
+  limitations: string[]
+  metadata: Record<string, unknown>
 }
 
 export function fetchFallRiskStatus(signal?: AbortSignal): Promise<FallRiskWorkerStatus> {

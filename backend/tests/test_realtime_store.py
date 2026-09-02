@@ -52,6 +52,9 @@ class FakeRedis:
     async def expire(self, key, seconds):
         self.expirations[key] = seconds
 
+    async def persist(self, key):
+        self.expirations.pop(key, None)
+
     async def lrange(self, key, start, end):
         return self.lists.get(key, [])[start:end + 1]
 
@@ -151,11 +154,14 @@ def test_fall_history_keeps_real_state_changes_without_duplicate_heartbeats() ->
 
         await store.append_fall_history(result("normal"))
         await store.append_fall_history(result("normal"))
+        await store.append_fall_history(result("warming_up"))
         await store.append_fall_history(result("fallen"))
 
+        # Simulate a list written by the older TTL-based implementation.
+        fake.expirations[store.HISTORY_KEY] = 1234
         history = await store.get_fall_history()
         assert [item.label for item in history] == ["fallen", "normal"]
-        assert fake.expirations[store.HISTORY_KEY] == 1234
+        assert store.HISTORY_KEY not in fake.expirations
 
     asyncio.run(run())
 

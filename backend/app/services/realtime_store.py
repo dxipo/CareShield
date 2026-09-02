@@ -69,6 +69,8 @@ class RealtimeStore:
         if result.simulated or result.task.value != "fall_detection":
             return
         await self._append_fall_event(result)
+        if result.label not in {"normal", "suspected_fall", "fallen", "recovering"}:
+            return
         previous_payload = await self._redis.lindex(self.HISTORY_KEY, 0)
         if previous_payload:
             previous = AlgorithmResult.model_validate_json(previous_payload)
@@ -78,12 +80,14 @@ class RealtimeStore:
                 return
         await self._redis.lpush(self.HISTORY_KEY, result.model_dump_json())
         await self._redis.ltrim(self.HISTORY_KEY, 0, self.HISTORY_LIMIT - 1)
-        await self._redis.expire(
-            self.HISTORY_KEY,
-            self._settings.latest_result_ttl_seconds,
-        )
+        # Detection history is a bounded operator record, not transient realtime
+        # state. Remove the legacy TTL so it survives refreshes and Redis restarts.
+        await self._redis.persist(self.HISTORY_KEY)
 
     async def get_fall_history(self, limit: int = 20) -> list[AlgorithmResult]:
+        # Migrate lists created by older releases that attached the realtime
+        # result TTL. PERSIST is harmless when the key is already persistent.
+        await self._redis.persist(self.HISTORY_KEY)
         payloads = await self._redis.lrange(
             self.HISTORY_KEY,
             0,

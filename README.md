@@ -19,7 +19,7 @@ M0–M6 已完成基础工程、Dashboard、真实萤石音视频、统一实时
 | AI realtime infrastructure | Implemented in M4; pipeline test is explicitly simulated |
 | AI models | YOLO26n-pose + STGCN-Extend binary classifier in AI Worker only |
 | Fall Detection | M5.2 real COCO17 sequence + STGCN-Extend baseline |
-| Fall Risk | M6 MotionCLIP core model integrated; research-only, no clinically calibrated risk level |
+| Fall Risk | M6 dual-model pipeline: KINECAL ST-GCN++ risk grading + MotionCLIP neuromotor analysis |
 | Fraud Detection | M7 baseline integrated; real audio/ASR/rules, optional local Ollama adjudication |
 
 ## 技术架构
@@ -30,6 +30,7 @@ M0–M6 已完成基础工程、Dashboard、真实萤石音视频、统一实时
 - AI Worker：独立 FastAPI + PyTorch/CUDA + Ultralytics + PyAV 服务
 - Fall Risk Worker：独立 FastAPI 批处理服务；与实时检测的 Python/模型环境隔离
 - MotionCLIP Worker：独立、长驻 GPU 模型服务；模型只加载一次，不接触 EZVIZ 凭据或媒体 URL
+- KINECAL Risk Worker：独立 ST-GCN++ 三分类服务；只读消费 GVHMR 世界系骨架，不接触视频或设备凭据
 - Fraud Worker：独立 CPU-first 音频服务；本地 Whisper ASR、规则状态机与可选 Ollama 复核
 - Deployment：Docker Compose
 - Reverse proxy：Nginx 目录已预留，M0 不加入访问链路
@@ -69,6 +70,7 @@ Backend ffprobe ---------------------------> temporary HLS -> safe media metadat
 ├── ai-worker/         # 独立 GPU/CPU Worker 与跌倒检测
 ├── fall-risk-worker/  # 独立跌倒风险特征提取 Worker
 ├── motionclip-worker/ # 独立 CARE-PD MotionCLIP 核心模型 Worker
+├── kinecal-risk-worker/ # 独立 KINECAL ST-GCN++ 跌倒风险分类 Worker
 ├── fraud-worker/      # 独立实时音频诈骗识别 Worker
 ├── shared/            # Backend / Worker 共享数据契约
 ├── infra/nginx/       # Nginx 配置预留
@@ -198,6 +200,7 @@ AI Worker 与 Frontend realtime 测试：
 ```bash
 python -m pytest ai-worker/tests
 PYTHONPATH=shared/python:fall-risk-worker python -m pytest fall-risk-worker/tests
+PYTHONPATH=kinecal-risk-worker python -m pytest kinecal-risk-worker/tests
 PYTHONPATH=shared/python:fraud-worker python -m pytest fraud-worker/tests
 cd frontend
 npm test
@@ -257,6 +260,10 @@ python3 scripts/probe_ezviz_stream.py
 
 更多协议选择、安全边界与调试方式见 [docs/ezviz-streaming.md](docs/ezviz-streaming.md)。
 
+KINECAL 跌倒风险分类的输入合同、模型局限与许可证说明见
+[docs/kinecal-fall-risk.md](docs/kinecal-fall-risk.md)。模型权重必须放在被 Git
+忽略的 `models/fall-risk/kinecal/`，不得提交原始训练数据或权重。
+
 ## M5.1 当前已完成内容
 
 - Dashboard 使用官方 `ezuikit-js` 的 EZOPEN 播放器，浏览器不再通过标准 HLS 预览。
@@ -299,11 +306,11 @@ python3 scripts/probe_ezviz_stream.py
 - 新建独立 `fall-risk-worker`，不把 TensorFlow/MeTRAbs/GVHMR 依赖装入实时跌倒检测 Worker
 - 建立异步评估任务、状态、质量、处理产物和 28 项步态参数统一合同
 - Worker 通过 Backend 内部鉴权接口获取临时媒体地址，不持有 EZVIZ Secret
-- 单一 EZVIZ HTTP-FLV 上游经 PyAV 18 识别扩展 HEVC，并通过 `hevc_mp4toannexb` 无解码转封装到内部 MediaMTX RTSP，M5/M6 可同时读取而不抢流
+- 单一 EZVIZ HTTP-FLV 上游由 PyAV 18 解码 HEVC，并低延迟规范化为 H.264 后发布到内部 MediaMTX RTSP；AAC 保持转封装，M5/M6/M7 可同时读取而不抢流
 - MediaMTX 保存 2 分钟短时环形缓冲；M6 按按钮触发的 RFC3339 时间窗截取，不再受 HLS 延迟错位影响
 - 页面显示触发时刻、采集剩余、采集耗时和处理耗时，VisionMD-Gait 与 GVHMR 均通过可替换 CLI Adapter 接入
 - Backend 提供 `/api/fall-risk/status` 和 `/api/fall-risk/assessments` API
-- 跌倒风险输入同时支持 H6c 定时采集和 8–60 秒本地 MP4 上传；两种输入复用同一 VisionMD、GVHMR 与 MotionCLIP 管线，上传文件仅保存在本机运行数据卷
+- 跌倒风险输入同时支持 H6c 定时采集和 8–60 秒本地 MP4 上传；两种输入复用同一 VisionMD、GVHMR、KINECAL ST-GCN++ 与 MotionCLIP 管线，上传文件仅保存在本机运行数据卷
 - VisionMD 先剔除首尾无人画面；中间长时间无人时按姿态轨迹拆段并选择有效帧最多的连续片段，短暂漏检才允许插值；质量门限按秒计算，不随源视频 FPS 改变
 - `/fall-risk` 提供受试者信息、真实采集/文件导入、统一进度、输入视频、原景 SMPL-X、8 项核心参数与完整参数展开、风险分级结果；历史评估每页 5 条并可回看，重启后由持久化 manifest 恢复；损坏媒体及插值主导结果会被门禁拦截
 - 官方 GVHMR 源码以固定 commit 的 Git submodule 引入；公开 checkpoint 下载到 Git 忽略的 `models/` 目录
@@ -314,7 +321,8 @@ python3 scripts/probe_ezviz_stream.py
 - Backend 通过受控 artifact proxy 向页面提供处理视频，不暴露 Worker token、临时流地址或宿主机路径
 - 无完整人体、步数不足、姿态缺失或参数不可用会进入失败/质量复核语义，不会填充假值
 - SMPL/SMPL-X 仍必须由每位部署者自行接受对应许可证后从官方站点取得；项目不分发这些资产
-- CARE-PD MotionCLIP 默认 profile 已通过独立 Worker 接入，输出连续健康参考偏离度、八项概念及低/中/高研究分级；分级阈值来自匹配 checkpoint 的训练集有序阈值实验，不作为临床诊断或校准概率
+- KINECAL ST-GCN++ v2 通过独立 Worker 接入，输出 NF/FHs/FHm 队列对应的低/中/高研究分级、三类概率和置信度；其单段直线行走高风险敏感性有限，不作为临床诊断或校准概率
+- CARE-PD MotionCLIP 通过独立 Worker 输出连续健康参考偏离度、八项运动概念及本地大模型专业解释，定位为神经运动功能分析，不用于诊断具体神经退行性疾病
 - 风险说明采用“结构化模型事实 + 可选本地 Qwen 表达”方式；Qwen 不参与分级且不接收姓名，超时或输出不合规时自动回退到确定性自然语言模板
 
 特征链架构与资产准备见 [docs/m6-fall-risk-foundation.md](docs/m6-fall-risk-foundation.md)，核心模型接入见 [docs/motionclip-fall-risk-integration.md](docs/motionclip-fall-risk-integration.md)。

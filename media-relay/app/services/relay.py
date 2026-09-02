@@ -4,6 +4,7 @@ import asyncio
 import threading
 from dataclasses import dataclass
 from datetime import datetime, timezone
+from fractions import Fraction
 
 import httpx
 import av
@@ -92,11 +93,11 @@ class RelayService:
                 self._publisher_stop = threading.Event()
                 self._publisher_task = asyncio.create_task(
                     asyncio.to_thread(
-                        self._remux,
+                        self._transcode,
                         source.playback_url,
                         self._publisher_stop,
                     ),
-                    name="media-remux",
+                    name="media-transcode",
                 )
                 await self._wait_until_published()
                 self._status = "connected"
@@ -183,8 +184,11 @@ class RelayService:
             await asyncio.wait_for(asyncio.shield(task), timeout=20.0)
         except asyncio.TimeoutError:
             # PyAV network reads have their own 15-second timeout. The thread
-            # will close naturally without spawning a second publisher.
-            pass
+            # will close naturally without spawning a second publisher. Always
+            # retrieve its eventual exception: FFmpeg exception strings can
+            # include the temporary playback URL and must never reach the
+            # event loop's "Task exception was never retrieved" logger.
+            task.add_done_callback(self._consume_publisher_result)
         except RelayMediaError:
             # The publisher commonly reports its media failure while this
             # cleanup coroutine is waiting. That failure already caused the
@@ -206,14 +210,13 @@ class RelayService:
         except Exception:
             pass
 
-    def _remux(self, source_url: str, stop: threading.Event) -> None:
-        """Remux EZVIZ HEVC/AAC into RTSP with an explicit Annex-B filter.
+    def _transcode(self, source_url: str, stop: threading.Event) -> None:
+        """Normalize EZVIZ HEVC to low-latency H.264 and relay AAC over RTSP.
 
-        EZVIZ HTTP-FLV carries HEVC NAL units with length prefixes. Forwarding
-        those PyAV packets directly to the RTSP muxer corrupts reference frames.
-        PyAV 18 can read EZVIZ's enhanced HEVC-FLV codec tag, while the Debian
-        FFmpeg 7 CLI cannot. Its FFmpeg bitstream-filter binding performs the
-        required conversion without decoding, so the shared relay stays light.
+        The enhanced HEVC-FLV packetization is not reliably preserved by a
+        packet-only FLV-to-RTSP remux, even with ``hevc_mp4toannexb``. Decode
+        once in the shared relay and encode a stable H.264 stream so every AI
+        consumer sees the same clean reference chain.
         """
 
         source: av.InputContainer | None = None
@@ -234,23 +237,32 @@ class RelayService:
                 format="rtsp",
                 options={"rtsp_transport": "tcp"},
             )
-            out_video = output.add_stream_from_template(video)
+            out_video = self._create_output_video(output, video)
             out_audio = output.add_stream_from_template(audio) if audio else None
-            annex_b = self._create_video_filter(video, out_video)
 
             streams = (video, audio) if audio is not None else (video,)
+            video_started = False
             for packet in source.demux(streams):
                 if stop.is_set():
                     return
                 if packet.dts is None:
                     continue
                 if packet.stream == video:
-                    for filtered in annex_b.filter(packet):
-                        filtered.stream = out_video
-                        output.mux(filtered)
-                elif out_audio is not None:
+                    for frame in packet.decode():
+                        if getattr(frame, "is_corrupt", False):
+                            video_started = False
+                            continue
+                        if not video_started:
+                            if not getattr(frame, "key_frame", False):
+                                continue
+                            video_started = True
+                        for encoded in out_video.encode(frame):
+                            output.mux(encoded)
+                elif out_audio is not None and video_started:
                     packet.stream = out_audio
                     output.mux(packet)
+            for encoded in out_video.encode():
+                output.mux(encoded)
         except (av.FFmpegError, OSError, StopIteration) as exc:
             raise RelayMediaError("Media publisher failed") from exc
         finally:
@@ -266,12 +278,20 @@ class RelayService:
                     pass
 
     @staticmethod
-    def _create_video_filter(
+    def _create_output_video(
+        output: av.OutputContainer,
         video: av.video.stream.VideoStream,
-        out_video: av.video.stream.VideoStream,
-    ) -> av.bitstream.BitStreamFilterContext:
-        return av.bitstream.BitStreamFilterContext(
-            "hevc_mp4toannexb",
-            video,
-            out_video,
-        )
+    ) -> av.video.stream.VideoStream:
+        rate = video.average_rate or Fraction(15, 1)
+        out_video = output.add_stream("libx264", rate=rate)
+        out_video.width = video.codec_context.width
+        out_video.height = video.codec_context.height
+        out_video.pix_fmt = "yuv420p"
+        out_video.options = {
+            "preset": "ultrafast",
+            "tune": "zerolatency",
+            "crf": "23",
+        }
+        out_video.codec_context.gop_size = max(1, round(float(rate)))
+        out_video.codec_context.max_b_frames = 0
+        return out_video

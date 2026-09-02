@@ -24,6 +24,7 @@ class FallRiskWorkerSettings:
     gvhmr_checkpoints_root: Path
     gvhmr_body_models_root: Path
     motionclip_internal_url: str = ""
+    kinecal_internal_url: str = ""
     media_relay_internal_url: str = ""
     media_relay_playback_url: str = ""
     risk_explanation_enabled: bool = False
@@ -77,6 +78,9 @@ def load_settings() -> FallRiskWorkerSettings:
         ),
         motionclip_internal_url=os.getenv(
             "MOTIONCLIP_INTERNAL_URL", "http://motionclip-worker:8091"
+        ).strip().rstrip("/"),
+        kinecal_internal_url=os.getenv(
+            "KINECAL_INTERNAL_URL", "http://kinecal-risk-worker:8092"
         ).strip().rstrip("/"),
         media_relay_internal_url=os.getenv(
             "MEDIA_RELAY_INTERNAL_URL", ""

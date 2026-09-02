@@ -20,6 +20,7 @@
 - `backend/`：API、业务服务、配置、数据契约及适配器入口，不在 route 中实现 AI 推理。
 - `ai-worker/`：独立 Worker、媒体读取、姿态标准化、跌倒检测与统一结果发布。
 - `fraud-worker/`：独立音频读取、ASR、诈骗证据融合和统一结果发布；不得保存原始家庭音频或完整对话。
+- `kinecal-risk-worker/`：独立 KINECAL ST-GCN++ 跌倒风险分类；只读消费标准化世界系骨架，不得接触 EZVIZ Secret 或播放地址。
 - `shared/`：跨模块 API schema、事件契约和算法结果契约说明。
 - `infra/`：部署基础设施配置。
 - `data/`：本地运行数据，数据文件不提交 Git。

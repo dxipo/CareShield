@@ -154,6 +154,54 @@ class FallRiskModelResult(BaseModel):
     explanation: str
 
 
+class KinecalRiskModelInfo(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    model_id: str = Field(min_length=1, max_length=120)
+    display_name: str = Field(min_length=1, max_length=160)
+    architecture: Literal["stgcnpp_action_adapter"] = "stgcnpp_action_adapter"
+    version: str = Field(min_length=1, max_length=80)
+    checkpoint_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    training_domain: str = Field(min_length=1, max_length=300)
+    clinical_risk_calibrated: bool = False
+
+
+class KinecalFallRiskResult(BaseModel):
+    """Three-class KINECAL cohort result, kept separate from MotionCLIP."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    model: KinecalRiskModelInfo
+    risk_level: Literal["low", "medium", "high"]
+    predicted_class: Literal[0, 1, 2]
+    predicted_group: Literal["NF", "FHs", "FHm"]
+    class_probabilities: dict[Literal["low", "medium", "high"], float]
+    raw_class_probabilities: dict[Literal["low", "medium", "high"], float]
+    confidence: float = Field(ge=0.0, le=1.0)
+    action_type: Literal["3m-walk-Front-View"]
+    source_frames: int = Field(ge=1)
+    source_fps: float = Field(gt=0.0)
+    source_duration_seconds: float = Field(gt=0.0)
+    clip_frames: Literal[120] = 120
+    input_adapter: str = Field(min_length=1, max_length=120)
+    input_quality: Literal["usable", "review"]
+    limitations: list[str] = Field(default_factory=list)
+    metadata: dict[str, object] = Field(default_factory=dict)
+
+    @field_validator("class_probabilities", "raw_class_probabilities")
+    @classmethod
+    def class_probabilities_are_valid(
+        cls, value: dict[str, float]
+    ) -> dict[str, float]:
+        if set(value) != {"low", "medium", "high"}:
+            raise ValueError("all three risk probabilities are required")
+        if any(item < 0.0 or item > 1.0 for item in value.values()):
+            raise ValueError("risk probabilities must be within [0,1]")
+        if abs(sum(value.values()) - 1.0) > 1e-4:
+            raise ValueError("risk probabilities must sum to one")
+        return value
+
+
 class FallRiskAssessment(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -187,6 +235,13 @@ class FallRiskAssessment(BaseModel):
         "not_installed", "not_configured", "waiting", "running", "completed", "failed", "skipped"
     ] = "not_installed"
     risk_result: FallRiskModelResult | None = None
+    kinecal_pipeline: PipelineState = Field(
+        default_factory=lambda: PipelineState(status=PipelineStatus.NOT_CONFIGURED)
+    )
+    kinecal_model_status: Literal[
+        "not_installed", "not_configured", "waiting", "running", "completed", "failed", "skipped"
+    ] = "not_installed"
+    fall_risk_result: KinecalFallRiskResult | None = None
     error: str | None = Field(default=None, max_length=500)
 
     @model_validator(mode="after")
@@ -225,6 +280,9 @@ class FallRiskWorkerStatus(BaseModel):
     gait_pipeline: PipelineState
     gvhmr_pipeline: PipelineState
     risk_pipeline: PipelineState = Field(
+        default_factory=lambda: PipelineState(status=PipelineStatus.NOT_CONFIGURED)
+    )
+    kinecal_pipeline: PipelineState = Field(
         default_factory=lambda: PipelineState(status=PipelineStatus.NOT_CONFIGURED)
     )
     missing_requirements: list[str] = Field(default_factory=list)
