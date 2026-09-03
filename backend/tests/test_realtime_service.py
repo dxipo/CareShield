@@ -24,6 +24,9 @@ class RecordingStore:
     async def append_fall_history(self, result):
         return None
 
+    async def append_fraud_history(self, result):
+        return None
+
     async def append_fraud_event(self, result):
         return None
 

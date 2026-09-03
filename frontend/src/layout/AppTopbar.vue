@@ -37,7 +37,6 @@ function toggleTheme(): void {
         {{ theme === 'light' ? '深色模式' : '浅色模式' }}
       </el-button>
       <div class="app-topbar__meta">
-        <span class="app-topbar__phase">CS</span>
         <div>
           <strong>CareShield</strong>
           <span>Smart elderly care &amp; safety</span>
@@ -80,20 +79,6 @@ p {
 
 .app-topbar__theme {
   min-width: 98px;
-}
-
-.app-topbar__phase {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  min-width: 38px;
-  height: 27px;
-  border: 1px solid var(--color-primary-border);
-  border-radius: 7px;
-  color: var(--color-primary);
-  background: var(--color-primary-soft);
-  font-size: 11px;
-  font-weight: 750;
 }
 
 .app-topbar__meta div {

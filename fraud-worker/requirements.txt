@@ -1,6 +1,7 @@
 fastapi==0.116.1
 httpx==0.28.1
 av==18.1.0
-numpy==2.2.6
+numpy==1.26.4
 faster-whisper==1.2.1
+funasr-onnx==0.4.2
 uvicorn[standard]==0.35.0

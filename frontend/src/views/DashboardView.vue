@@ -169,12 +169,15 @@ const riskTrend = computed<RiskTrendPoint[]>(() => {
   }
   return points
 })
-const riskTrendMax = computed(() => Math.max(1, ...riskTrend.value.map((point) => point.total)))
+const riskTrendMax = computed(() => Math.max(
+  1,
+  ...riskTrend.value.flatMap((point) => [point.fallCount, point.fraudCount]),
+))
 const riskTrendTotal = computed(() => riskTrend.value.reduce((sum, point) => sum + point.total, 0))
 const recentEvents = computed(() => riskEvents.value.slice(0, 3))
 
-function trendBarHeight(total: number): string {
-  return total === 0 ? '0%' : `${Math.max(10, (total / riskTrendMax.value) * 100)}%`
+function trendBarHeight(count: number): string {
+  return count === 0 ? '0%' : `${Math.max(10, (count / riskTrendMax.value) * 88)}%`
 }
 
 async function loadOnlineDevices() {
@@ -326,15 +329,22 @@ onBeforeUnmount(() => {
           </div>
           <div class="risk-trend__plot">
             <div v-for="point in riskTrend" :key="point.key" class="risk-trend__point">
-              <span class="risk-trend__value">{{ point.total || '' }}</span>
               <div class="risk-trend__track">
                 <div
-                  class="risk-trend__bar"
-                  :style="{ height: trendBarHeight(point.total) }"
+                  class="risk-trend__series risk-trend__series--fall"
+                  :style="{ '--bar-height': trendBarHeight(point.fallCount) }"
                   :title="`${point.label}：跌倒 ${point.fallCount}，诈骗 ${point.fraudCount}`"
                 >
-                  <i v-if="point.fallCount" class="risk-trend__segment risk-trend__segment--fall" :style="{ flex: point.fallCount }"></i>
-                  <i v-if="point.fraudCount" class="risk-trend__segment risk-trend__segment--fraud" :style="{ flex: point.fraudCount }"></i>
+                  <span v-if="point.fallCount">{{ point.fallCount }}</span>
+                  <i v-if="point.fallCount"></i>
+                </div>
+                <div
+                  class="risk-trend__series risk-trend__series--fraud"
+                  :style="{ '--bar-height': trendBarHeight(point.fraudCount) }"
+                  :title="`${point.label}：跌倒 ${point.fallCount}，诈骗 ${point.fraudCount}`"
+                >
+                  <span v-if="point.fraudCount">{{ point.fraudCount }}</span>
+                  <i v-if="point.fraudCount"></i>
                 </div>
               </div>
               <time :datetime="point.key">{{ point.label }}</time>
@@ -470,13 +480,11 @@ onBeforeUnmount(() => {
   border-radius: 3px;
 }
 
-.risk-trend__dot--fall,
-.risk-trend__segment--fall {
+.risk-trend__dot--fall {
   background: var(--color-danger);
 }
 
-.risk-trend__dot--fraud,
-.risk-trend__segment--fraud {
+.risk-trend__dot--fraud {
   background: var(--color-warning);
 }
 
@@ -500,14 +508,8 @@ onBeforeUnmount(() => {
 .risk-trend__point {
   display: grid;
   min-width: 0;
-  grid-template-rows: 18px 1fr 25px;
+  grid-template-rows: 1fr 25px;
   text-align: center;
-}
-
-.risk-trend__value {
-  color: var(--color-text-secondary);
-  font-size: 11px;
-  font-weight: 650;
 }
 
 .risk-trend__track {
@@ -515,20 +517,44 @@ onBeforeUnmount(() => {
   align-items: flex-end;
   justify-content: center;
   min-height: 0;
+  gap: 7px;
 }
 
-.risk-trend__bar {
-  display: flex;
-  width: min(30px, 64%);
-  min-height: 0;
-  overflow: hidden;
-  border-radius: 6px 6px 2px 2px;
-  flex-direction: column-reverse;
+.risk-trend__series {
+  --bar-height: 0%;
+  position: relative;
+  width: min(20px, 30%);
+  height: 100%;
 }
 
-.risk-trend__segment {
+.risk-trend__series span {
+  position: absolute;
+  right: 0;
+  bottom: calc(var(--bar-height) + 3px);
+  left: 0;
+  color: var(--color-text-secondary);
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 14px;
+}
+
+.risk-trend__series i {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  left: 0;
   display: block;
+  height: var(--bar-height);
   min-height: 4px;
+  border-radius: 5px 5px 2px 2px;
+}
+
+.risk-trend__series--fall i {
+  background: var(--color-danger);
+}
+
+.risk-trend__series--fraud i {
+  background: var(--color-warning);
 }
 
 .risk-trend__point time {

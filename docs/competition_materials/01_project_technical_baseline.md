@@ -24,14 +24,14 @@
 | GVHMR/SMPL-X | 【已完成并可验证】 | `/fall-risk` 处理视频 | fall-risk-worker CLI | 既有记录证明真实 H6c 5 秒片段产生 150 帧骨架/网格 | `pipelines/gvhmr/`、`docs/m6-fall-risk-foundation.md` |
 | KINECAL 跌倒风险分级 | 【已有实现，但缺少充分实测】 | `/fall-risk` 新结果区 | kinecal-risk-worker | ST-GCN++ 三分类代码与权重合同已接入；当前工作区未提交，跨域验证不足 | `kinecal-risk-worker/`、`kinecal_walk_v2.json` |
 | MotionCLIP 运动功能评估 | 【已有实现，但缺少充分实测】 | `/fall-risk` | motionclip-worker | 真实 checkpoint 合同、健康参考距离、8 概念；不是疾病诊断 | `motionclip-worker/` |
-| 诈骗识别 | 【已有实现，但缺少充分实测】 | `/fraud-risk`、首页、事件页 | fraud-worker | 真实 H6c 音频、Faster-Whisper、规则和可选 Qwen；缺正式准确率测试集 | `fraud-worker/app/` |
+| 诈骗识别 | 【已有实现，但缺少充分实测】 | `/fraud-risk`、首页、事件页 | fraud-worker | 真实 H6c 音频、SenseVoiceSmall ONNX、规则和可选 Qwen；缺正式准确率测试集 | `fraud-worker/app/` |
 | 风险事件 | 【已有实现，但缺少正式持久化】 | `/events`、首页趋势 | `GET /api/events` | Redis 有界列表保存真实 fall/fraud 告警；非 PostgreSQL 正式事件表 | `realtime_store.py` |
 | PostgreSQL 业务数据 | 【规划/预留功能，尚未真正实现】 | 无 | 仅 Compose 容器 | 未发现 ORM、SQL 或业务表 | `docker-compose.yml` |
 | 用户、权限、通知、PTZ、回放 | 【规划/预留功能，尚未真正实现】 | 无 | 无 | 无真实实现 | README“尚未实现” |
 
 ## 3. 当前技术栈
 
-前端使用 Vue 3.5、TypeScript、Vite 7、Vue Router、Element Plus 和 `ezuikit-js 9.0.19`，通过 REST 获取快照，通过单一 WebSocket 接收实时结果。Backend 使用 FastAPI、Uvicorn、HTTPX 和 Redis 异步客户端；ffprobe 仅用于低频媒体诊断。AI 侧按环境隔离为实时跌倒、批处理步态/GVHMR、MotionCLIP、KINECAL、诈骗识别和媒体中继服务。实际框架包括 PyTorch/CUDA、Ultralytics、PyAV、TensorFlow 2.17、MeTRAbs、GVHMR、Faster-Whisper、Ollama/Qwen3。
+前端使用 Vue 3.5、TypeScript、Vite 7、Vue Router、Element Plus 和 `ezuikit-js 9.0.19`，通过 REST 获取快照，通过单一 WebSocket 接收实时结果。Backend 使用 FastAPI、Uvicorn、HTTPX 和 Redis 异步客户端；ffprobe 仅用于低频媒体诊断。AI 侧按环境隔离为实时跌倒、批处理步态/GVHMR、MotionCLIP、KINECAL、诈骗识别和媒体中继服务。实际框架包括 PyTorch/CUDA、Ultralytics、PyAV、TensorFlow 2.17、MeTRAbs、GVHMR、FunASR ONNX/SenseVoiceSmall、Ollama/Qwen3；Faster-Whisper 保留为可选回退。
 
 部署采用 Docker Compose。PostgreSQL 16 和 Redis 7 均定义了健康检查，但当前业务状态、latest result、worker heartbeat 和风险事件实际写入 Redis；PostgreSQL 尚未承载业务数据。目标设备是 EZVIZ CS-H6c，已记录媒体为 HEVC/H.265 1920×1080、约 15 FPS、AAC LC 16 kHz 单声道。
 

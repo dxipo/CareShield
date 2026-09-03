@@ -7,7 +7,7 @@ H6c AAC audio
   -> authenticated Media Relay / internal RTSP
   -> Fraud Worker AudioReader
   -> 16 kHz mono PCM + endpoint segmentation
-  -> local Faster-Whisper
+  -> local SenseVoiceSmall ONNX
   -> keyword / critical-pair / context detector
   -> optional local Ollama adjudication
   -> AlgorithmResult(fraud_detection, simulated=false)
@@ -20,8 +20,11 @@ or an upstream playback address.
 
 ## Models
 
-- ASR baseline: the local CTranslate2 Whisper asset supplied by the research
-  prototype. Configure its host directory with `FRAUD_ASR_MODEL_HOST_PATH`.
+- ASR baseline: the official `iic/SenseVoiceSmall-onnx` quantized model, run
+  locally through `funasr-onnx`. Chinese recognition and inverse text
+  normalization are enabled. Configure its host directory with
+  `FRAUD_SENSEVOICE_MODEL_HOST_PATH`. Faster-Whisper remains available only as
+  an explicitly selected fallback provider.
 - LLM baseline: Ollama `qwen3:4b`, stored in the `ollama_data` Docker volume.
   LLM adjudication is optional and reviews every meaningful segmented utterance;
   very short filler speech is skipped. This allows semantic evidence to recover
@@ -36,6 +39,11 @@ bounded evidence strength, not a calibrated fraud probability. `warning` and
 `critical` set `metadata.alert_active=true`; Backend stores one risk event per
 alert lifecycle. Missing audio, failed ASR, or an unavailable Worker must never
 be presented as `normal`.
+
+The warning banner exposes an operator acknowledgement action. Backend forwards
+it to the Fraud Worker through the authenticated internal control endpoint. An
+acknowledged lifecycle stays silent while the detector remains in warning or
+critical state; returning to normal rearms the next independent incident.
 
 Credential-code sharing uses a paired rule: a security-code term (including a
 small audited allow-list of observed Mandarin ASR homophones) must occur with a
@@ -52,37 +60,46 @@ than only multiplying an already non-zero keyword score.
 - No full transcript is written to application logs.
 - Ollama is local by default. A future cloud provider must be explicitly
   enabled and must redact content before transmission.
+- `GET /api/fraud-detection/history` returns at most 100 bounded records. Each
+  record contains only the already-redacted transcript preview and an audited
+  metadata allow-list; raw audio, full dialogue, LLM reasoning, and debug data
+  are never persisted in this history.
 
 ## Runtime dependencies and licenses
 
 | Component | Pinned version / model | Purpose | License |
 | --- | --- | --- | --- |
-| Faster-Whisper | 1.2.1 | Local ASR runtime | MIT |
-| CTranslate2 | resolved by Faster-Whisper | Optimized Whisper inference | MIT |
+| FunASR ONNX | 0.4.2 | SenseVoiceSmall local ASR runtime | MIT |
+| SenseVoiceSmall ONNX | official quantized checkpoint | Chinese ASR and inverse text normalization | Apache-2.0 |
+| ONNX Runtime | resolved by FunASR ONNX | CPU inference runtime | MIT |
+| Faster-Whisper | 1.2.1 | Explicit fallback ASR runtime | MIT |
 | PyAV | 18.1.0 | Decode and resample the relay audio track | BSD-3-Clause |
 | Ollama | 0.12.11 container | Local LLM serving | MIT |
 | Qwen3 | `qwen3:4b` | Optional fraud-language adjudication | Apache-2.0 |
 
-The Whisper model asset is deployment-local and ignored by Git. Deployers are
-responsible for verifying the license of the particular Whisper checkpoint
-they mount; the source prototype did not include reliable provenance metadata.
+ASR model assets are deployment-local and ignored by Git. The default model is
+the official `iic/SenseVoiceSmall-onnx` quantized checkpoint. Deployers choosing
+the Faster-Whisper fallback remain responsible for checking the provenance and
+license of their mounted checkpoint.
 
 ## Local setup
 
-Place the CTranslate2 model under `models/fraud/whisper-model/`, or configure:
+Place the official ONNX model files under
+`models/fraud/sensevoice-small-onnx/`, or configure:
 
 ```env
-FRAUD_ASR_MODEL_HOST_PATH=/absolute/path/to/whisper-model
+FRAUD_ASR_PROVIDER=sensevoice_small
+FRAUD_SENSEVOICE_MODEL_HOST_PATH=/absolute/path/to/sensevoice-small-onnx
+FRAUD_ASR_MODEL_PATH=/models/fraud/sensevoice-small-onnx
 FRAUD_ASR_DEVICE=cpu
-FRAUD_ASR_COMPUTE_TYPE=int8
 FRAUD_ASR_CPU_THREADS=2
-FRAUD_ASR_NUM_WORKERS=1
 FRAUD_OLLAMA_MODEL=qwen3:4b
 ```
 
-The CPU baseline deliberately limits CTranslate2 to two threads and one worker
-so continuous ASR does not starve the desktop browser or the other CareShield
-services. These values are deployment tuning controls, not inference FPS.
+The CPU baseline limits ONNX Runtime thread use so continuous ASR does not
+starve the desktop browser or other CareShield services. These values are
+deployment tuning controls, not inference FPS. SenseVoiceSmall is not served by
+Ollama; Ollama receives only the resulting text for optional semantic review.
 
 Install the optional local LLM model into the ignored Compose volume:
 

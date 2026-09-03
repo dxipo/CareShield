@@ -14,6 +14,8 @@ class RealtimeStore:
     LATEST_PREFIX = "ai:latest:"
     HISTORY_KEY = "ai:history:fall_detection"
     HISTORY_LIMIT = 100
+    FRAUD_HISTORY_KEY = "ai:history:fraud_detection"
+    FRAUD_HISTORY_LIMIT = 100
     RISK_EVENTS_KEY = "ai:events:risk"
     RISK_EVENT_LATCH_PREFIX = "ai:event:fall:active:"
     FRAUD_EVENT_LATCH_PREFIX = "ai:event:fraud:active:"
@@ -92,6 +94,47 @@ class RealtimeStore:
             self.HISTORY_KEY,
             0,
             min(max(limit, 1), self.HISTORY_LIMIT) - 1,
+        )
+        return [AlgorithmResult.model_validate_json(payload) for payload in payloads]
+
+    async def append_fraud_history(self, result: AlgorithmResult) -> None:
+        """Keep bounded, privacy-safe records of real fraud analyses."""
+        if result.simulated or result.task.value != "fraud_detection":
+            return
+        safe_metadata = {
+            key: value
+            for key, value in result.metadata.items()
+            if key
+            in {
+                "score_type",
+                "asr_provider",
+                "asr_latency_ms",
+                "utterance_seconds",
+                "transcript_preview",
+                "evidence_categories",
+                "matched_terms",
+                "llm_used",
+                "alert_active",
+            }
+        }
+        persisted = result.model_copy(update={"metadata": safe_metadata})
+        await self._redis.lpush(
+            self.FRAUD_HISTORY_KEY,
+            persisted.model_dump_json(),
+        )
+        await self._redis.ltrim(
+            self.FRAUD_HISTORY_KEY,
+            0,
+            self.FRAUD_HISTORY_LIMIT - 1,
+        )
+        await self._redis.persist(self.FRAUD_HISTORY_KEY)
+
+    async def get_fraud_history(self, limit: int = 20) -> list[AlgorithmResult]:
+        await self._redis.persist(self.FRAUD_HISTORY_KEY)
+        payloads = await self._redis.lrange(
+            self.FRAUD_HISTORY_KEY,
+            0,
+            min(max(limit, 1), self.FRAUD_HISTORY_LIMIT) - 1,
         )
         return [AlgorithmResult.model_validate_json(payload) for payload in payloads]
 

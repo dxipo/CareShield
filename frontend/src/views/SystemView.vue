@@ -41,7 +41,6 @@ onBeforeUnmount(() => {
     <PageHeader
       eyebrow="SYSTEM STATUS"
       title="系统状态"
-      description="查看 Backend、Redis、AI Worker 与浏览器实时通道的真实运行状态。"
     />
 
     <p v-if="loadError" class="system-error">实时基础设施状态暂时不可用</p>

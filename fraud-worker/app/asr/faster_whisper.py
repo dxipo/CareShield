@@ -3,31 +3,13 @@ from __future__ import annotations
 import os
 import re
 import time
-from dataclasses import dataclass
 
 import numpy as np
 
-
-class AsrError(RuntimeError):
-    """Speech recognition failure without raw audio or transcript content."""
+from app.asr.contracts import AsrError, Transcript, is_transcript_usable
 
 
-@dataclass(frozen=True, slots=True)
-class Transcript:
-    text: str
-    language: str | None
-    confidence: float | None
-    latency_ms: float
-
-
-def is_transcript_usable(
-    text: str,
-    confidence: float | None,
-    minimum_confidence: float,
-) -> bool:
-    return len(text) >= 2 and (
-        confidence is None or confidence >= minimum_confidence
-    )
+__all__ = ["AsrError", "FasterWhisperAsr", "Transcript", "is_transcript_usable"]
 
 
 class FasterWhisperAsr:

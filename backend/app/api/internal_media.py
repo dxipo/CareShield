@@ -1,19 +1,28 @@
 from typing import Annotated, Literal
 
-from fastapi import APIRouter, Depends, HTTPException, Path, Query, status
+from fastapi import APIRouter, Body, Depends, HTTPException, Path, Query, status
 
 from app.adapters.ezviz.exceptions import (
     EzvizDeviceNotFoundError,
     EzvizDeviceOfflineError,
     EzvizError,
     EzvizNotConfiguredError,
+    EzvizVoiceUnsupportedError,
+    EzvizVoiceQuotaError,
+    EzvizVoiceValidationError,
 )
-from app.api.dependencies import get_device_service, get_stream_service
+from app.api.dependencies import (
+    get_device_service,
+    get_stream_service,
+    get_voice_broadcast_service,
+)
 from app.api.internal_ai import verify_worker_token
 from app.schemas.device import DeviceSummary
 from app.schemas.stream import StreamPlayback
+from app.schemas.voice import VoiceBroadcastCapability, VoiceBroadcastResult
 from app.services.device_service import DeviceService
 from app.services.stream_service import StreamService
+from app.services.voice_broadcast_service import VoiceBroadcastService
 
 
 router = APIRouter(
@@ -60,6 +69,45 @@ async def get_worker_stream(
         raise _internal_media_exception(exc) from exc
 
 
+@router.get(
+    "/devices/{device_serial}/voice/capability",
+    response_model=VoiceBroadcastCapability,
+)
+async def get_voice_capability(
+    device_serial: Annotated[str, Path(min_length=1, max_length=128)],
+    service: Annotated[VoiceBroadcastService, Depends(get_voice_broadcast_service)],
+    channel_no: Annotated[int, Query(ge=1, le=64)] = 1,
+) -> VoiceBroadcastCapability:
+    try:
+        return await service.capability(device_serial, channel_no=channel_no)
+    except EzvizError as exc:
+        raise _internal_media_exception(exc) from exc
+
+
+@router.post(
+    "/devices/{device_serial}/voice",
+    response_model=VoiceBroadcastResult,
+)
+async def send_voice_once(
+    device_serial: Annotated[str, Path(min_length=1, max_length=128)],
+    audio: Annotated[bytes, Body(media_type="application/octet-stream")],
+    service: Annotated[VoiceBroadcastService, Depends(get_voice_broadcast_service)],
+    filename: Annotated[str, Query(min_length=1, max_length=128)],
+    channel_no: Annotated[int, Query(ge=1, le=64)] = 1,
+) -> VoiceBroadcastResult:
+    """Forward transient audio to EZVIZ without persisting it."""
+
+    try:
+        return await service.send_once(
+            device_serial,
+            channel_no=channel_no,
+            filename=filename,
+            content=audio,
+        )
+    except EzvizError as exc:
+        raise _internal_media_exception(exc) from exc
+
+
 def _internal_media_exception(exc: EzvizError) -> HTTPException:
     if isinstance(exc, EzvizNotConfiguredError):
         return HTTPException(
@@ -75,6 +123,21 @@ def _internal_media_exception(exc: EzvizError) -> HTTPException:
         return HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="Media device is offline",
+        )
+    if isinstance(exc, EzvizVoiceValidationError):
+        return HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Voice audio is invalid",
+        )
+    if isinstance(exc, EzvizVoiceUnsupportedError):
+        return HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Media device does not support voice broadcast",
+        )
+    if isinstance(exc, EzvizVoiceQuotaError):
+        return HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="EZVIZ voice broadcast quota is unavailable",
         )
     return HTTPException(
         status_code=status.HTTP_502_BAD_GATEWAY,

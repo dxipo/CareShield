@@ -238,3 +238,41 @@ def test_risk_events_keep_one_real_fraud_event_per_alert_lifecycle() -> None:
         assert all("transcript_preview" not in event.metadata for event in events)
 
     asyncio.run(run())
+
+
+def test_fraud_history_keeps_bounded_privacy_safe_real_records() -> None:
+    async def run() -> None:
+        store = RealtimeStore(settings())
+        fake = FakeRedis()
+        store._redis = fake
+
+        def result(*, simulated: bool = False) -> AlgorithmResult:
+            return AlgorithmResult(
+                result_id=uuid4(),
+                task=AlgorithmTask.FRAUD_DETECTION,
+                model_id="fraud-ensemble",
+                model_version="m7-v1",
+                result_timestamp=datetime.now(timezone.utc),
+                label="normal",
+                score=0.0,
+                level="normal",
+                metadata={
+                    "transcript_preview": "请告诉我验证码 ****",
+                    "evidence_categories": [],
+                    "llm_reason": "must not be persisted",
+                    "private_debug": "must not be persisted",
+                },
+                simulated=simulated,
+            )
+
+        await store.append_fraud_history(result())
+        await store.append_fraud_history(result(simulated=True))
+
+        history = await store.get_fraud_history()
+        assert len(history) == 1
+        assert history[0].metadata["transcript_preview"].endswith("****")
+        assert "llm_reason" not in history[0].metadata
+        assert "private_debug" not in history[0].metadata
+        assert store.FRAUD_HISTORY_KEY not in fake.expirations
+
+    asyncio.run(run())

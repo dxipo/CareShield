@@ -21,6 +21,7 @@ class AiRealtimeService:
     async def ingest_result(self, result: AlgorithmResult) -> RealtimeEnvelope:
         await self._store.save_latest_result(result)
         await self._store.append_fall_history(result)
+        await self._store.append_fraud_history(result)
         await self._store.append_fraud_event(result)
         envelope = self._envelope(
             RealtimeMessageType.ALGORITHM_RESULT,
@@ -31,6 +32,9 @@ class AiRealtimeService:
 
     async def fall_history(self, limit: int = 20) -> list[AlgorithmResult]:
         return await self._store.get_fall_history(limit)
+
+    async def fraud_history(self, limit: int = 20) -> list[AlgorithmResult]:
+        return await self._store.get_fraud_history(limit)
 
     async def risk_events(self, limit: int = 50) -> list[AlgorithmResult]:
         return await self._store.get_risk_events(limit)

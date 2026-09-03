@@ -143,7 +143,6 @@ onBeforeUnmount(() => {
     <PageHeader
       eyebrow="DEVICE INTEGRATION"
       title="设备管理"
-      description="通过 CareShield Backend 查询当前萤石开放平台账号下的真实设备。设备序列号在界面中默认脱敏。"
     />
 
     <article class="panel-card devices-panel">
@@ -205,7 +204,7 @@ onBeforeUnmount(() => {
 
       <template v-else>
         <div class="devices-summary">
-          <span>共 {{ devices.length }} 台真实设备</span>
+          <span>共{{ devices.length }}台设备</span>
           <span class="devices-summary__divider" />
           <span>{{ onlineCount }} 台在线</span>
         </div>

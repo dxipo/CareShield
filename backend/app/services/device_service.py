@@ -62,6 +62,34 @@ class DeviceService:
             raise EzvizDeviceNotFoundError("EZVIZ device was not found")
         return self._map_detail(raw_device, fallback_serial=device_serial)
 
+    async def get_device_capacity(
+        self,
+        device_serial: str,
+        *,
+        channel_no: int = 1,
+    ) -> dict[str, Any]:
+        return await self._require_client().get_device_capacity(
+            device_serial,
+            channel_no=channel_no,
+        )
+
+    async def send_voice_once(
+        self,
+        device_serial: str,
+        *,
+        channel_no: int,
+        filename: str,
+        content: bytes,
+        content_type: str,
+    ) -> None:
+        await self._require_client().send_voice_once(
+            device_serial,
+            channel_no=channel_no,
+            filename=filename,
+            content=content,
+            content_type=content_type,
+        )
+
     def _require_client(self) -> EzvizClient:
         if not self.settings.configured or self.client is None:
             raise EzvizNotConfiguredError("EZVIZ integration is not configured")

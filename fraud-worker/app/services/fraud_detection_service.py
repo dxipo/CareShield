@@ -10,9 +10,12 @@ from uuid import uuid4
 
 from careshield_contracts import AlgorithmResult, AlgorithmTask, RiskLevel
 
-from app.asr.faster_whisper import AsrError, FasterWhisperAsr, is_transcript_usable
+from app.alerts.voice_alert import FraudVoiceAlert
+from app.asr.contracts import AsrError, is_transcript_usable
+from app.asr.factory import build_asr
 from app.core.config import FraudWorkerSettings
 from app.detection.detector import FraudDetector, redact_transcript
+from app.detection.alert import FraudAlertLatch
 from app.llm.ollama import OllamaAdjudicator
 from app.media.audio_reader import AudioReader, AudioReaderError
 from app.media.segmenter import EndpointSegmenter, Utterance
@@ -27,18 +30,15 @@ class FraudDetectionService:
         self,
         settings: FraudWorkerSettings,
         publisher: ResultPublisher,
+        voice_alert: FraudVoiceAlert | None = None,
     ) -> None:
         self.settings = settings
         self.publisher = publisher
+        self.voice_alert = voice_alert or FraudVoiceAlert(settings)
         self.reader = AudioReader(settings)
-        self.asr = FasterWhisperAsr(
-            settings.asr_model_path,
-            settings.asr_device,
-            settings.asr_compute_type,
-            settings.asr_cpu_threads,
-            settings.asr_num_workers,
-        )
+        self.asr = build_asr(settings)
         self.detector = FraudDetector(settings.transcript_retention_seconds)
+        self.alert = FraudAlertLatch()
         self.llm = (
             OllamaAdjudicator(
                 settings.ollama_base_url,
@@ -93,6 +93,7 @@ class FraudDetectionService:
         self.reader.close()
         if self.llm is not None:
             self.llm.close()
+        await self.voice_alert.close()
 
     def runtime_metadata(self) -> dict:
         llm_ready = self.llm.ready() if self.llm is not None else False
@@ -121,6 +122,9 @@ class FraudDetectionService:
                 "last_utterance_seconds": self.last_utterance_seconds,
                 "reconnect_count": self.reconnect_count,
                 "last_error": self.last_error,
+                "alert_active": self.alert.active,
+                "alert_acknowledged": self.alert.acknowledged,
+                "voice_alert": self.voice_alert.metadata(),
             }
         }
 
@@ -201,6 +205,7 @@ class FraudDetectionService:
             dialogue = " ".join(text for _, text in self._dialogue)
             llm_result = self.llm.judge(dialogue)
         decision = self.detector.analyze(transcript.text, llm=llm_result)
+        self.alert.update(decision.alert_active)
         result_timestamp = datetime.now(timezone.utc)
         result = AlgorithmResult(
             result_id=uuid4(),
@@ -238,7 +243,8 @@ class FraudDetectionService:
                     if decision.llm_reason
                     else None
                 ),
-                "alert_active": decision.alert_active,
+                "alert_active": self.alert.active,
+                "alert_acknowledged": self.alert.acknowledged,
             },
             simulated=False,
         )
@@ -249,6 +255,28 @@ class FraudDetectionService:
             self.last_error = None
         except (PublishError, TimeoutError):
             self.last_error = "Fraud result delivery failed"
+            return
+
+        alert_future = asyncio.run_coroutine_threadsafe(
+            self.voice_alert.handle_decision(
+                device_id=self.reader.device_id,
+                alert_active=self.alert.active,
+            ),
+            loop,
+        )
+        try:
+            alert_future.result(timeout=self.settings.request_timeout_seconds + 2)
+        except Exception:
+            # Camera announcement is an optional side effect. It must never
+            # interrupt ASR, fraud classification, or canonical result delivery.
+            logger.warning("Fraud voice alert delivery failed")
+
+    def acknowledge_alert(self) -> dict[str, bool]:
+        self.alert.acknowledge()
+        return {
+            "alert_active": self.alert.active,
+            "alert_acknowledged": self.alert.acknowledged,
+        }
 
     @staticmethod
     def _is_llm_candidate(text: str) -> bool:

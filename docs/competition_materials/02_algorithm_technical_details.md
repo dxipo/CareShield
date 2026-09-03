@@ -60,7 +60,7 @@ class-1 softmax 被命名为 `fall_score`，未做概率校准。当前 0.45–0
 
 ## 5. 诈骗识别技术
 
-Fraud Worker 从内部 RTSP 只解码音轨，统一重采样为 16 kHz mono PCM。能量端点器以 RMS 180 为默认阈值，0.7 秒尾静音切句，接受 0.5–15 秒语句。Faster-Whisper 1.2.1 使用本地 CTranslate2 模型、中文、beam size 3、temperature 0；平均 `exp(avg_logprob)` 作为工程置信度，低于 0.50 或短于两个字符不进入风险分析。
+Fraud Worker 从内部 RTSP 只解码音轨，统一重采样为 16 kHz mono PCM。能量端点器以 RMS 180 为默认阈值，0.7 秒尾静音切句，接受 0.5–15 秒语句。默认 ASR 为官方 SenseVoiceSmall ONNX 量化模型，由 `funasr-onnx 0.4.2` 在 CPU 本地运行，固定中文识别并启用逆文本规范化；该封装当前不提供经校准的整句置信度，因此只进行非空与最小文本长度校验，不能虚构置信分数。Faster-Whisper 仍作为显式配置的回退实现，其工程置信度门仅在选择该 Provider 时生效。
 
 检测器在 60 秒、最多 8 段的内存上下文中匹配凭据、转账、远控、冒充公检法、投资、保健品、退款中奖、亲属冒充和紧迫话术，并检查高危词对。少量普通话同音 ASR alias 只有与“告诉/发给/念给”等分享动作共现时才生效。可选 Ollama `qwen3:4b` 对有意义语句进行 JSON 复核，temperature 0、关闭 thinking；高置信可疑判断增加证据，明确正常判断只降低部分规则强度。证据经衰减和滞回生成 normal/suspicious/warning/critical，分数是 heuristic ensemble 强度，不是诈骗概率。
 
@@ -69,6 +69,6 @@ Fraud Worker 从内部 RTSP 只解码音轨，统一重采样为 16 kHz mono PCM
 #### 实现依据
 
 - `fraud-worker/app/media/`
-- `fraud-worker/app/asr/faster_whisper.py`
+- `fraud-worker/app/asr/{factory,sensevoice,faster_whisper}.py`
 - `fraud-worker/app/detection/detector.py`
 - `fraud-worker/app/llm/ollama.py`

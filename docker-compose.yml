@@ -25,6 +25,7 @@ services:
       AI_LATEST_RESULT_TTL_SECONDS: ${AI_LATEST_RESULT_TTL_SECONDS:-3600}
       AI_WORKER_INTERNAL_URL: http://ai-worker:8080
       FALL_RISK_WORKER_INTERNAL_URL: http://fall-risk-worker:8090
+      FRAUD_WORKER_INTERNAL_URL: http://fraud-worker:8092
       EZVIZ_APP_KEY: ${EZVIZ_APP_KEY:-}
       EZVIZ_APP_SECRET: ${EZVIZ_APP_SECRET:-}
       EZVIZ_API_BASE_URL: ${EZVIZ_API_BASE_URL:-https://open.ys7.com}
@@ -244,8 +245,8 @@ services:
       FRAUD_WORKER_VERSION: ${FRAUD_WORKER_VERSION:-0.7.0}
       AI_WORKER_HEARTBEAT_INTERVAL_SECONDS: ${AI_WORKER_HEARTBEAT_INTERVAL_SECONDS:-10}
       FRAUD_DETECTION_ENABLED: ${FRAUD_DETECTION_ENABLED:-true}
-      FRAUD_ASR_PROVIDER: ${FRAUD_ASR_PROVIDER:-faster_whisper}
-      FRAUD_ASR_MODEL_PATH: /models/fraud/whisper-model
+      FRAUD_ASR_PROVIDER: ${FRAUD_ASR_PROVIDER:-sensevoice_small}
+      FRAUD_ASR_MODEL_PATH: ${FRAUD_ASR_MODEL_PATH:-/models/fraud/sensevoice-small-onnx}
       FRAUD_ASR_DEVICE: ${FRAUD_ASR_DEVICE:-cpu}
       FRAUD_ASR_COMPUTE_TYPE: ${FRAUD_ASR_COMPUTE_TYPE:-int8}
       FRAUD_ASR_CPU_THREADS: ${FRAUD_ASR_CPU_THREADS:-2}
@@ -259,8 +260,16 @@ services:
       FRAUD_OLLAMA_BASE_URL: http://ollama:11434
       FRAUD_OLLAMA_MODEL: ${FRAUD_OLLAMA_MODEL:-qwen3:4b}
       FRAUD_TRANSCRIPT_RETENTION_SECONDS: ${FRAUD_TRANSCRIPT_RETENTION_SECONDS:-60}
+      # Disabled until an EZVIZ cloud-broadcast quota is available. The audio
+      # path must refer to an operator-mounted WAV/MP3/AAC file in the container.
+      FRAUD_VOICE_ALERT_ENABLED: ${FRAUD_VOICE_ALERT_ENABLED:-false}
+      FRAUD_VOICE_ALERT_AUDIO_PATH: ${FRAUD_VOICE_ALERT_AUDIO_PATH:-/alerts/fraud-warning.aac}
+      FRAUD_VOICE_ALERT_CHANNEL_NO: ${FRAUD_VOICE_ALERT_CHANNEL_NO:-1}
+      FRAUD_VOICE_ALERT_COOLDOWN_SECONDS: ${FRAUD_VOICE_ALERT_COOLDOWN_SECONDS:-300}
     volumes:
       - ${FRAUD_ASR_MODEL_HOST_PATH:-./models/fraud/whisper-model}:/models/fraud/whisper-model:ro
+      - ${FRAUD_SENSEVOICE_MODEL_HOST_PATH:-./models/fraud/sensevoice-small-onnx}:/models/fraud/sensevoice-small-onnx:ro
+      - ./fraud-worker/assets:/alerts:ro
     depends_on:
       backend:
         condition: service_healthy

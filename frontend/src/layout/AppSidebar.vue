@@ -10,10 +10,19 @@ import {
   VideoCamera,
   Warning,
 } from '@element-plus/icons-vue'
-import { markRaw } from 'vue'
+import { computed, markRaw, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useRoute } from 'vue-router'
 
+import { fetchAlgorithmsStatus } from '../api/algorithms'
+import { fetchDevices } from '../api/devices'
+
 const route = useRoute()
+const platformHealthy = ref(false)
+let healthTimer: ReturnType<typeof setInterval> | null = null
+
+const platformStatusLabel = computed(() =>
+  platformHealthy.value ? '设备与功能运行正常' : '部分设备离线或功能异常',
+)
 
 const navigation = [
   { path: '/dashboard', label: '综合首页', icon: markRaw(DataBoard) },
@@ -25,6 +34,32 @@ const navigation = [
   { path: '/algorithms', label: '算法管理', icon: markRaw(Cpu) },
   { path: '/system', label: '系统状态', icon: markRaw(Setting) },
 ]
+
+async function refreshPlatformHealth(): Promise<void> {
+  try {
+    const [devices, algorithms] = await Promise.all([
+      fetchDevices(),
+      fetchAlgorithmsStatus(),
+    ])
+    const capabilityStates = Object.values(algorithms.capabilities)
+    platformHealthy.value =
+      devices.some((device) => device.online === true) &&
+      algorithms.redis_reachable &&
+      algorithms.workers.some((worker) => worker.online) &&
+      capabilityStates.every((state) => state === 'running' || state === 'installed')
+  } catch {
+    platformHealthy.value = false
+  }
+}
+
+onMounted(() => {
+  void refreshPlatformHealth()
+  healthTimer = setInterval(refreshPlatformHealth, 30_000)
+})
+
+onBeforeUnmount(() => {
+  if (healthTimer) clearInterval(healthTimer)
+})
 </script>
 
 <template>
@@ -47,8 +82,12 @@ const navigation = [
       </el-menu-item>
     </el-menu>
 
-    <div class="app-sidebar__footer">
-      <span class="app-sidebar__footer-dot" aria-hidden="true"></span>
+    <div class="app-sidebar__footer" :title="platformStatusLabel">
+      <span
+        class="app-sidebar__footer-dot"
+        :class="{ 'app-sidebar__footer-dot--warning': !platformHealthy }"
+        :aria-label="platformStatusLabel"
+      ></span>
       <div>
         <strong>CareShield 智慧守护</strong>
         <span>多模态居家安全监护</span>
@@ -176,5 +215,12 @@ const navigation = [
   border-radius: 50%;
   background: var(--color-success);
   box-shadow: 0 0 0 4px rgb(34 160 107 / 10%);
+  transition: background-color .2s ease, box-shadow .2s ease;
 }
+
+.app-sidebar__footer-dot--warning {
+  background: var(--color-warning);
+  box-shadow: 0 0 0 4px rgb(245 158 11 / 12%);
+}
+
 </style>

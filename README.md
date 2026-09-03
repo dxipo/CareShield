@@ -31,7 +31,7 @@ M0–M6 已完成基础工程、Dashboard、真实萤石音视频、统一实时
 - Fall Risk Worker：独立 FastAPI 批处理服务；与实时检测的 Python/模型环境隔离
 - MotionCLIP Worker：独立、长驻 GPU 模型服务；模型只加载一次，不接触 EZVIZ 凭据或媒体 URL
 - KINECAL Risk Worker：独立 ST-GCN++ 三分类服务；只读消费 GVHMR 世界系骨架，不接触视频或设备凭据
-- Fraud Worker：独立 CPU-first 音频服务；本地 Whisper ASR、规则状态机与可选 Ollama 复核
+- Fraud Worker：独立 CPU-first 音频服务；本地 SenseVoiceSmall ASR、规则状态机与可选 Ollama 复核
 - Deployment：Docker Compose
 - Reverse proxy：Nginx 目录已预留，M0 不加入访问链路
 
@@ -333,14 +333,22 @@ KINECAL 跌倒风险分类的输入合同、模型局限与许可证说明见
 - 新建独立 `fraud-worker`，不把 ASR 或诈骗判定逻辑装入 Backend、跌倒检测或跌倒风险 Worker；跌倒风险仅可选复用 Ollama 做结果措辞，不复用诈骗上下文
 - 复用 Media Relay 中真实 H6c AAC 音轨，不向 Fraud Worker 提供 EZVIZ Secret 或临时上游播放地址
 - AAC 解码后统一重采样为 16 kHz mono PCM，并提供静音端点切分、长度上限和自动重连
-- 使用 Git 忽略的本地 CTranslate2 Whisper 模型进行真实中文转写；低置信度结果不进入业务检测
+- 默认使用 Git 忽略的官方 SenseVoiceSmall ONNX 量化模型进行本地中文转写与文本规范化；保留 Faster-Whisper 作为显式回退实现
 - 复用原型中的老人诈骗关键词、高危组合、上下文累积和滞回状态思想，输出分数明确为未校准证据强度
 - 本地 Ollama `qwen3:4b` 作为可选二次复核；模型缺失时规则检测继续运行并明确报告 LLM unavailable
 - 真实结果统一发布为 `task=fraud_detection`、`simulated=false`，经 Backend、Redis、WebSocket 到 Vue
 - `/fraud-risk` 展示真实 Worker、音频、ASR、LLM、脱敏文本、风险证据和红色告警
+- `/fraud-risk` 提供每页 5 条的检测记录；Backend 在 Redis 中有界保存最多 100 条真实结果的脱敏摘要、状态与证据分数
+- 诈骗告警条幅提供“确认已处理”；确认经 Backend 鉴权转发至 Fraud Worker，同一告警生命周期保持静默，风险恢复后自动重新布防
 - Dashboard 诈骗风险卡和风险事件中心接入真实诈骗结果；完整音频不保存，完整对话不进入 Redis
 
 架构、安全边界和调试方法见 [docs/m7-fraud-detection.md](docs/m7-fraud-detection.md)。
+
+## EZVIZ 临时语音播报实验
+
+Backend 已建立通过内部 Worker Token 鉴权的临时语音下发链路，并确认当前 H6c 返回 `support_talk=1`。真实 API 调用已到达萤石云广播服务，但当前开发者账号因资源包余量不足返回 `111000`，因此尚未完成扬声器实际出声验收。开通要求、接口约束和验证记录见 [docs/ezviz-voice-broadcast.md](docs/ezviz-voice-broadcast.md)。
+
+诈骗风险 Worker 已预留告警联动：真实结果首次进入 `warning` 或 `critical` 时可通过上述内部接口下发一次运维配置的提示音，并使用告警生命周期锁和冷却时间抑制重复计费。该能力默认关闭，当前不会调用收费接口；语音下发失败也不会影响诈骗检测结果的实时发布。
 
 ## 尚未实现
 

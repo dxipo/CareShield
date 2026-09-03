@@ -57,6 +57,7 @@ class AiRealtimeSettings:
     latest_result_ttl_seconds: int
     worker_internal_url: str = "http://ai-worker:8080"
     fall_risk_worker_internal_url: str = "http://fall-risk-worker:8090"
+    fraud_worker_internal_url: str = "http://fraud-worker:8092"
 
     @property
     def configured(self) -> bool:
@@ -83,5 +84,9 @@ def load_ai_realtime_settings() -> AiRealtimeSettings:
         fall_risk_worker_internal_url=os.getenv(
             "FALL_RISK_WORKER_INTERNAL_URL",
             "http://fall-risk-worker:8090",
+        ).strip().rstrip("/"),
+        fraud_worker_internal_url=os.getenv(
+            "FRAUD_WORKER_INTERNAL_URL",
+            "http://fraud-worker:8092",
         ).strip().rstrip("/"),
     )

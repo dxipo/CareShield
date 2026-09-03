@@ -8,7 +8,7 @@
 
 ## 2. 配置
 
-执行 `cp .env.example .env`，仅在被忽略的 `.env` 写真实 PostgreSQL密码、`AI_WORKER_SHARED_TOKEN`、EZVIZ AppKey/AppSecret和本机模型路径。EZOPEN必须在可信本机显式启用。MotionCLIP/KINECAL runtime、Whisper模型、YOLO/STGCN/GVHMR/SMPL资产按 README 路径准备并只读挂载。
+执行 `cp .env.example .env`，仅在被忽略的 `.env` 写真实 PostgreSQL密码、`AI_WORKER_SHARED_TOKEN`、EZVIZ AppKey/AppSecret和本机模型路径。EZOPEN必须在可信本机显式启用。MotionCLIP/KINECAL runtime、SenseVoiceSmall ONNX、YOLO/STGCN/GVHMR/SMPL资产按 README 路径准备并只读挂载；Faster-Whisper 模型仅在启用回退 Provider 时需要。
 
 成功标准：`git check-ignore -v .env` 有命中；`.env.example` 只有占位符；`git status --untracked-files=all` 不出现模型、runtime、数据和播放器构建资产。
 

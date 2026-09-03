@@ -31,11 +31,27 @@ export function fetchFallDetectionHistory(
   return requestJson(`/api/fall-detection/history?limit=${limit}`, signal)
 }
 
+export function fetchFraudDetectionHistory(
+  limit = 20,
+  signal?: AbortSignal,
+): Promise<AlgorithmResult[]> {
+  return requestJson(`/api/fraud-detection/history?limit=${limit}`, signal)
+}
+
 export function acknowledgeFallAlert(signal?: AbortSignal): Promise<{
   alert_active: boolean
   alert_acknowledged: boolean
 }> {
   return requestJson('/api/fall-detection/alert/acknowledge', signal, {
+    method: 'POST',
+  })
+}
+
+export function acknowledgeFraudAlert(signal?: AbortSignal): Promise<{
+  alert_active: boolean
+  alert_acknowledged: boolean
+}> {
+  return requestJson('/api/fraud-detection/alert/acknowledge', signal, {
     method: 'POST',
   })
 }

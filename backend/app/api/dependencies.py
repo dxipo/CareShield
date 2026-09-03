@@ -6,6 +6,7 @@ from app.services.media_probe_service import MediaProbeService
 from app.services.realtime_hub import RealtimeHub
 from app.services.realtime_store import RealtimeStore
 from app.services.stream_service import StreamService
+from app.services.voice_broadcast_service import VoiceBroadcastService
 
 
 _device_service: DeviceService | None = None
@@ -14,6 +15,7 @@ _media_probe_service: MediaProbeService | None = None
 _realtime_hub = RealtimeHub()
 _ai_realtime_service: AiRealtimeService | None = None
 _fall_risk_service: FallRiskService | None = None
+_voice_broadcast_service: VoiceBroadcastService | None = None
 
 
 async def get_device_service() -> DeviceService:
@@ -37,6 +39,13 @@ async def get_media_probe_service() -> MediaProbeService:
     return _media_probe_service
 
 
+async def get_voice_broadcast_service() -> VoiceBroadcastService:
+    global _voice_broadcast_service
+    if _voice_broadcast_service is None:
+        _voice_broadcast_service = VoiceBroadcastService(await get_device_service())
+    return _voice_broadcast_service
+
+
 async def get_realtime_hub() -> RealtimeHub:
     return _realtime_hub
 
@@ -58,8 +67,10 @@ async def get_fall_risk_service() -> FallRiskService:
 
 async def close_device_service() -> None:
     global _device_service, _stream_service, _media_probe_service
+    global _voice_broadcast_service
     _media_probe_service = None
     _stream_service = None
+    _voice_broadcast_service = None
     if _device_service is not None:
         await _device_service.close()
         _device_service = None

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Bell, Refresh, Warning } from '@element-plus/icons-vue'
+import { Bell, Lock, Refresh, Warning } from '@element-plus/icons-vue'
 import { computed, onMounted, ref } from 'vue'
 
 import { fetchRiskEvents } from '../api/events'
@@ -10,6 +10,8 @@ import type { AlgorithmResult } from '../realtime/types'
 const events = ref<AlgorithmResult[]>([])
 const loading = ref(true)
 const loadError = ref(false)
+const eventPage = ref(1)
+const EVENT_PAGE_SIZE = 10
 
 const todayCount = computed(() => {
   const today = new Date().toDateString()
@@ -18,6 +20,11 @@ const todayCount = computed(() => {
 const latestTime = computed(() => events.value[0]?.result_timestamp ?? null)
 const fallCount = computed(() => events.value.filter((event) => event.task === 'fall_detection').length)
 const fraudCount = computed(() => events.value.filter((event) => event.task === 'fraud_detection').length)
+const eventPageCount = computed(() => Math.max(1, Math.ceil(events.value.length / EVENT_PAGE_SIZE)))
+const paginatedEvents = computed(() => {
+  const start = (eventPage.value - 1) * EVENT_PAGE_SIZE
+  return events.value.slice(start, start + EVENT_PAGE_SIZE)
+})
 
 function eventTitle(event: AlgorithmResult): string {
   return event.task === 'fraud_detection' ? '疑似诈骗告警' : '检测到跌倒'
@@ -50,6 +57,7 @@ async function loadEvents(): Promise<void> {
   loading.value = true
   try {
     events.value = (await fetchRiskEvents(100)).filter((event) => event.simulated === false)
+    eventPage.value = Math.min(eventPage.value, eventPageCount.value)
     loadError.value = false
   } catch {
     loadError.value = true
@@ -66,16 +74,11 @@ onMounted(() => void loadEvents())
     <PageHeader
       eyebrow="RISK EVENT CENTER"
       title="风险事件"
-      description="集中展示真实算法产生的跌倒与诈骗风险记录；普通状态变化与模拟测试不会进入事件中心。"
     >
       <template #actions>
         <el-button :icon="Refresh" :loading="loading" @click="loadEvents">刷新事件</el-button>
       </template>
     </PageHeader>
-
-    <p class="event-policy">
-      当前为事件记录基线：保存检测发生时间与算法证据，不代表已经完成人工处置、通知或报警闭环。
-    </p>
 
     <section class="event-summary" aria-label="风险事件概览">
       <article><span>已记录事件</span><strong>{{ events.length }}</strong><small>仅真实风险结果</small></article>
@@ -98,9 +101,15 @@ onMounted(() => void loadEvents())
         :icon="Bell"
       />
       <div v-else-if="loading" class="event-loading">正在读取风险事件...</div>
-      <ol v-else>
-        <li v-for="event in events" :key="event.result_id">
-          <span class="event-list__icon"><el-icon :size="21"><Warning /></el-icon></span>
+      <template v-else>
+      <ol>
+        <li v-for="event in paginatedEvents" :key="event.result_id">
+          <span class="event-list__icon">
+            <el-icon :size="21">
+              <Lock v-if="event.task === 'fraud_detection'" />
+              <Warning v-else />
+            </el-icon>
+          </span>
           <div class="event-list__primary">
             <div><strong>{{ eventTitle(event) }}</strong><el-tag size="small" type="danger" effect="dark">{{ event.level?.toUpperCase() ?? 'RISK' }}</el-tag></div>
             <p>{{ maskedDevice(event.device_id) }} · {{ event.model_id }} / {{ event.model_version }}</p>
@@ -113,21 +122,24 @@ onMounted(() => void loadEvents())
           <time :datetime="event.result_timestamp">{{ formatTime(event.result_timestamp) }}</time>
         </li>
       </ol>
+      <div class="event-pagination-row">
+        <span>第 {{ eventPage }} / {{ eventPageCount }} 页</span>
+        <el-pagination
+          v-model:current-page="eventPage"
+          class="event-pagination"
+          background
+          layout="prev, pager, next, jumper"
+          :page-size="EVENT_PAGE_SIZE"
+          :pager-count="5"
+          :total="events.length"
+        />
+      </div>
+      </template>
     </section>
   </div>
 </template>
 
 <style scoped>
-.event-policy {
-  margin: -8px 0 18px;
-  padding: 11px 14px;
-  border: 1px solid var(--color-warning-border);
-  border-radius: 9px;
-  color: var(--color-warning-text);
-  background: var(--color-warning-soft);
-  font-size: 12px;
-}
-
 .event-summary {
   display: grid;
   margin-bottom: 20px;
@@ -236,6 +248,33 @@ onMounted(() => void loadEvents())
   color: var(--color-text-secondary);
   font-size: 12px;
   text-align: right;
+}
+
+.event-pagination-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 36px;
+  margin-top: 10px;
+  color: var(--color-text-secondary);
+  font-size: 12px;
+}
+
+.event-pagination {
+  justify-content: flex-end;
+}
+
+.event-pagination :deep(.btn-prev),
+.event-pagination :deep(.btn-next),
+.event-pagination :deep(.el-pager li) {
+  border: 1px solid var(--color-border);
+  background: var(--color-control-bg) !important;
+}
+
+.event-pagination :deep(.el-pager li.is-active) {
+  border-color: var(--color-primary);
+  color: #fff;
+  background: var(--color-primary) !important;
 }
 
 .event-loading,

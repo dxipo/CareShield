@@ -5,8 +5,6 @@ import { fetchAlgorithmsStatus } from '../api/algorithms'
 import PageHeader from '../components/PageHeader.vue'
 import {
   lastRealtimeMessageAt,
-  latestPipelineLatencyMs,
-  latestPipelineTest,
   latestWorkerStatus,
   realtimeStatus,
 } from '../realtime'
@@ -67,9 +65,6 @@ async function loadStatus() {
     worker.value = response.workers[0] ?? null
     capabilities.value = response.capabilities
     redisReachable.value = response.redis_reachable
-    if (!latestPipelineTest.value && response.latest_pipeline_test?.simulated) {
-      latestPipelineTest.value = response.latest_pipeline_test
-    }
     loadError.value = false
   } catch {
     loadError.value = true
@@ -93,7 +88,6 @@ onBeforeUnmount(() => {
     <PageHeader
       eyebrow="AI INFRASTRUCTURE"
       title="算法管理"
-      description="查看 AI Worker、统一实时通道与已接入算法能力状态。"
     />
 
     <div v-if="loadError" class="status-notice status-notice--error">算法基础设施状态暂时不可用</div>
@@ -142,19 +136,6 @@ onBeforeUnmount(() => {
       </div>
     </section>
 
-    <section class="panel-card pipeline-panel">
-      <div class="panel-card__header">
-        <div><span class="panel-card__kicker">DEVELOPER DIAGNOSTICS</span><h2>Pipeline Test</h2></div>
-        <el-tag v-if="latestPipelineTest" type="warning" effect="plain">Simulated</el-tag>
-      </div>
-      <div v-if="latestPipelineTest" class="pipeline-result">
-        <strong>{{ latestPipelineTest.label }}</strong>
-        <span>Task: {{ latestPipelineTest.task }}</span>
-        <span>Received: {{ formatTime(lastRealtimeMessageAt ?? latestPipelineTest.result_timestamp) }}</span>
-        <span>End-to-end: {{ latestPipelineLatencyMs ?? 'Unavailable' }} ms</span>
-      </div>
-      <p v-else class="empty-copy">尚未收到开发用 pipeline_test。该测试不会进入风险业务页面或事件中心。</p>
-    </section>
   </div>
 </template>
 
@@ -168,9 +149,6 @@ onBeforeUnmount(() => {
 .status-list dd { margin: 0; color: var(--color-heading); font-weight: 650; text-align: right; }
 .capability-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; margin-top: 20px; }
 .capability-grid > div { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 17px; border: 1px solid var(--color-border-light); border-radius: 10px; background: var(--color-surface-soft); }
-.pipeline-result { display: flex; flex-wrap: wrap; gap: 24px; margin-top: 20px; color: var(--color-text-secondary); }
-.pipeline-result strong { color: var(--color-heading); }
-.empty-copy { margin: 22px 0 2px; color: var(--color-text-muted); }
 .status-notice { margin: -12px 0 18px; padding: 10px 14px; border-radius: 8px; }
 .status-notice--error { color: var(--color-danger-text); background: var(--color-danger-soft); }
 </style>

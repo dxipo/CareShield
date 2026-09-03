@@ -40,6 +40,10 @@ class FraudWorkerSettings:
     llm_timeout_seconds: float
     result_heartbeat_seconds: float
     transcript_retention_seconds: int
+    voice_alert_enabled: bool = False
+    voice_alert_audio_path: str = ""
+    voice_alert_channel_no: int = 1
+    voice_alert_cooldown_seconds: float = 300.0
 
 
 def load_settings() -> FraudWorkerSettings:
@@ -70,9 +74,9 @@ def load_settings() -> FraudWorkerSettings:
             os.getenv("FRAUD_MAXIMUM_UTTERANCE_SECONDS", "15")
         ),
         reconnect_seconds=float(os.getenv("FRAUD_RECONNECT_SECONDS", "3")),
-        asr_provider=os.getenv("FRAUD_ASR_PROVIDER", "faster_whisper").strip(),
+        asr_provider=os.getenv("FRAUD_ASR_PROVIDER", "sensevoice_small").strip(),
         asr_model_path=os.getenv(
-            "FRAUD_ASR_MODEL_PATH", "/models/fraud/whisper-model"
+            "FRAUD_ASR_MODEL_PATH", "/models/fraud/sensevoice-small-onnx"
         ).strip(),
         asr_device=os.getenv("FRAUD_ASR_DEVICE", "cpu").strip(),
         asr_compute_type=os.getenv("FRAUD_ASR_COMPUTE_TYPE", "int8").strip(),
@@ -92,5 +96,13 @@ def load_settings() -> FraudWorkerSettings:
         ),
         transcript_retention_seconds=int(
             os.getenv("FRAUD_TRANSCRIPT_RETENTION_SECONDS", "60")
+        ),
+        voice_alert_enabled=_boolean("FRAUD_VOICE_ALERT_ENABLED", False),
+        voice_alert_audio_path=os.getenv("FRAUD_VOICE_ALERT_AUDIO_PATH", "").strip(),
+        voice_alert_channel_no=max(
+            1, int(os.getenv("FRAUD_VOICE_ALERT_CHANNEL_NO", "1"))
+        ),
+        voice_alert_cooldown_seconds=max(
+            0.0, float(os.getenv("FRAUD_VOICE_ALERT_COOLDOWN_SECONDS", "300"))
         ),
     )

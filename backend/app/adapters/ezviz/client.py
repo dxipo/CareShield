@@ -7,6 +7,7 @@ from app.adapters.ezviz.exceptions import (
     EzvizDeviceNotFoundError,
     EzvizNetworkError,
     EzvizResponseError,
+    EzvizVoiceQuotaError,
 )
 from app.adapters.ezviz.token_manager import EzvizTokenManager
 from app.core.config import EzvizSettings
@@ -85,6 +86,45 @@ class EzvizClient:
             raise EzvizResponseError("EZVIZ device detail data is invalid")
         return data
 
+    async def get_device_capacity(
+        self,
+        device_serial: str,
+        *,
+        channel_no: int = 1,
+    ) -> dict[str, Any]:
+        payload = await self._authorized_post(
+            "/api/lapp/device/capacity",
+            {"deviceSerial": device_serial, "channelNo": channel_no},
+        )
+        data = payload.get("data")
+        if not isinstance(data, dict):
+            raise EzvizResponseError("EZVIZ device capacity data is invalid")
+        return data
+
+    async def send_voice_once(
+        self,
+        device_serial: str,
+        *,
+        channel_no: int,
+        filename: str,
+        content: bytes,
+        content_type: str,
+    ) -> None:
+        """Send one transient audio file without exposing the access token."""
+
+        try:
+            await self._authorized_multipart_post(
+                "/api/lapp/voice/sendonce",
+                {"deviceSerial": device_serial, "channelNo": str(channel_no)},
+                {"voiceFile": (filename, content, content_type)},
+            )
+        except EzvizApiError as exc:
+            if exc.code == "111000":
+                raise EzvizVoiceQuotaError(
+                    "EZVIZ voice broadcast quota is unavailable"
+                ) from exc
+            raise
+
     async def get_live_address(
         self,
         device_serial: str,
@@ -143,6 +183,46 @@ class EzvizClient:
             await self.token_manager.get_access_token(force_refresh=True)
             return await self._authorized_post(path, data, retry_token=False)
 
+        if code != "200":
+            raise EzvizApiError(code or None)
+        return payload
+
+    async def _authorized_multipart_post(
+        self,
+        path: str,
+        data: dict[str, str],
+        files: dict[str, tuple[str, bytes, str]],
+        *,
+        retry_token: bool = True,
+    ) -> dict[str, Any]:
+        access_token = await self.token_manager.get_access_token()
+        try:
+            response = await self._http_client.post(
+                path,
+                data={"accessToken": access_token, **data},
+                files=files,
+            )
+            response.raise_for_status()
+        except httpx.HTTPError as exc:
+            raise EzvizNetworkError("Unable to reach EZVIZ Open API") from exc
+
+        try:
+            payload = response.json()
+        except ValueError as exc:
+            raise EzvizResponseError("EZVIZ returned invalid JSON") from exc
+        if not isinstance(payload, dict):
+            raise EzvizResponseError("EZVIZ returned an invalid response")
+
+        code = str(payload.get("code", ""))
+        if code == "10002" and retry_token:
+            self.token_manager.invalidate()
+            await self.token_manager.get_access_token(force_refresh=True)
+            return await self._authorized_multipart_post(
+                path,
+                data,
+                files,
+                retry_token=False,
+            )
         if code != "200":
             raise EzvizApiError(code or None)
         return payload

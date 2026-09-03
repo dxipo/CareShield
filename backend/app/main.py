@@ -8,6 +8,7 @@ from app.api.devices import router as devices_router
 from app.api.events import router as events_router
 from app.api.fall_detection import router as fall_detection_router
 from app.api.fall_risk import router as fall_risk_router
+from app.api.fraud_detection import router as fraud_detection_router
 from app.api.health import router as health_router
 from app.api.internal_ai import router as internal_ai_router
 from app.api.internal_media import router as internal_media_router
@@ -33,6 +34,7 @@ app.include_router(devices_router, prefix="/api")
 app.include_router(events_router, prefix="/api")
 app.include_router(fall_detection_router, prefix="/api")
 app.include_router(fall_risk_router, prefix="/api")
+app.include_router(fraud_detection_router, prefix="/api")
 app.include_router(streams_router, prefix="/api")
 app.include_router(integrations_router, prefix="/api")
 app.include_router(algorithms_router, prefix="/api")
