@@ -181,11 +181,11 @@ def authoritative_explanation(
     )
     evidence = "\n".join(f"- {item}" for item in _key_evidence(result))
     return (
-        f"【神经运动功能概览】\n本次分析显示相对健康参考表征的偏离程度为{reference_band}。\n\n"
-        f"【量化依据】\nMotionCLIP 健康参考偏离度为 {result.healthy_distance:.6f}，"
+        f"【运动功能评估概览】\n本次分析显示相对健康参考表征的偏离程度为{reference_band}。\n\n"
+        f"【量化依据】\nGAITCLIP 健康参考偏离度为 {result.healthy_distance:.6f}，"
         f"{_threshold_description(result)}{window_description}。该偏离度是相对健康参考表征的距离，"
         "不等同于跌倒概率。\n\n"
-        f"【关键运动证据】\n{evidence}\n\n"
+        f"【关键参数分析】\n{evidence}\n\n"
         f"【专业综合分析】\n{summary}\n\n"
         f"【建议】\n{recommendation}"
     )

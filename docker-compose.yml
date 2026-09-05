@@ -134,6 +134,10 @@ services:
       VISIONMD_RUNNER: /opt/visionmd-app/run_rgb_to_28.py
       VISIONMD_PROJECT_ROOT: /opt/visionmd-app
       VISIONMD_METRABS_MODEL_DIR: /models/fall-risk/visionmd/metrabs_local_s
+      GAIT_PARAMETER_PIPELINE: ${GAIT_PARAMETER_PIPELINE:-gaitkit_shadow}
+      GAITKIT_PYTHON: /opt/visionmd-env/bin/python
+      GAITKIT_RUNNER: /opt/gaitkit-app/run_world_to_28.py
+      GAITKIT_PROJECT_ROOT: /opt/gaitkit-app
       TF_USE_LEGACY_KERAS: "1"
       GVHMR_PYTHON: /runtime/gvhmr-env/bin/python
       GVHMR_RUNNER: /opt/careshield/gvhmr/run_gvhmr_world.py

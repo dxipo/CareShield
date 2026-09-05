@@ -15,6 +15,7 @@ from careshield_contracts import (
     FallRiskAssessmentCreate,
     FallRiskVideoAssessmentCreate,
     FallRiskWorkerStatus,
+    GaitAnalysisState,
     PipelineState,
     PipelineStatus,
 )
@@ -27,6 +28,7 @@ from app.adapters.media_validation import (
     validate_video_capture,
 )
 from app.adapters.kinecal import KinecalRiskClient, KinecalRiskError
+from app.adapters.gaitkit import load_gaitkit_result
 from app.adapters.motionclip import MotionClipClient, MotionClipError
 from app.adapters.recorder import CaptureError, capture_video
 from app.adapters.relay_recording import BufferedCaptureError, RelayRecordingClient
@@ -60,6 +62,11 @@ class FallRiskAssessmentService:
     HMR2_CHECKPOINT_SIZE = 2_709_494_041
     MAX_VIDEO_BYTES = 512 * 1024 * 1024
 
+    @staticmethod
+    def _apply_result_policy(assessment: FallRiskAssessment) -> FallRiskAssessment:
+        """Revalidate after model_copy so the shared screening policy is applied."""
+        return FallRiskAssessment.model_validate(assessment.model_dump(mode="python"))
+
     def __init__(self, settings: FallRiskWorkerSettings) -> None:
         self.settings = settings
         self.store = AssessmentStore(settings.data_root)
@@ -85,6 +92,12 @@ class FallRiskAssessmentService:
             settings.gvhmr_python,
             settings.gvhmr_runner,
             settings.gvhmr_project_root,
+        )
+        self.gaitkit = CommandPipeline(
+            "GaitKit",
+            settings.gaitkit_python,
+            settings.gaitkit_runner,
+            settings.gaitkit_project_root,
         )
         self.motionclip = MotionClipClient(
             settings.motionclip_internal_url,
@@ -118,6 +131,19 @@ class FallRiskAssessmentService:
                     None
                     if self._visionmd_ready()
                     else "VisionMD runtime or MeTRAbs model is not installed"
+                ),
+            ),
+            gait_parameter_mode=self.settings.gait_parameter_mode,
+            gaitkit_pipeline=PipelineState(
+                status=(
+                    PipelineStatus.READY
+                    if self._gaitkit_ready()
+                    else PipelineStatus.NOT_CONFIGURED
+                ),
+                message=(
+                    None
+                    if self._gaitkit_ready()
+                    else "GaitKit runner or isolated runtime is unavailable"
                 ),
             ),
             gvhmr_pipeline=PipelineState(
@@ -273,6 +299,21 @@ class FallRiskAssessmentService:
             capture_duration_seconds=duration_seconds,
             created_at=now,
             gait_pipeline=PipelineState(status=PipelineStatus.WAITING),
+            gait_analysis=GaitAnalysisState(
+                requested_mode=self.settings.gait_parameter_mode,
+                gaitkit_status=(
+                    "waiting"
+                    if self.settings.gait_parameter_mode != "legacy" and self._gaitkit_ready()
+                    else "not_configured"
+                    if self.settings.gait_parameter_mode != "legacy"
+                    else "skipped"
+                ),
+                message=(
+                    "GaitKit shadow analysis is not configured"
+                    if self.settings.gait_parameter_mode != "legacy" and not self._gaitkit_ready()
+                    else None
+                ),
+            ),
             gvhmr_pipeline=PipelineState(
                 status=PipelineStatus.WAITING if gvhmr_ready else PipelineStatus.NOT_CONFIGURED,
                 message=None if gvhmr_ready else "授权人体模型或 GVHMR 环境未就绪",
@@ -333,8 +374,9 @@ class FallRiskAssessmentService:
         await self.kinecal.refresh_health()
         if not self.motionclip.ready and not self.kinecal.ready:
             raise WorkerNotReadyError("Fall-risk model workers are unavailable")
-        parameters = self.store.directory(assessment_id) / "gvhmr" / "smplx_global_params.npz"
-        skeleton = self.store.directory(assessment_id) / "gvhmr" / "world_skeleton_3d.npz"
+        directory = self.store.directory(assessment_id)
+        parameters = directory / "gvhmr" / "smplx_global_params.npz"
+        skeleton = directory / "gvhmr" / "world_skeleton_3d.npz"
         if (
             assessment.gvhmr_pipeline.status is not PipelineStatus.COMPLETED
             or (self.motionclip.ready and not parameters.is_file())
@@ -343,7 +385,7 @@ class FallRiskAssessmentService:
             raise RiskModelInputError("Completed GVHMR skeleton and parameters are required")
         rerun_update = {
             "status": AssessmentStatus.PROCESSING_RISK,
-            "stage": "运行跌倒风险与神经运动分析",
+            "stage": "运行跌倒风险筛查与专项运动功能分析",
             "progress": 0.92,
             "risk_pipeline": PipelineState(
                 status=PipelineStatus.RUNNING if self.motionclip.ready else PipelineStatus.NOT_CONFIGURED,
@@ -362,6 +404,8 @@ class FallRiskAssessmentService:
         if self.kinecal.ready:
             rerun_update["fall_risk_result"] = None
         assessment = assessment.model_copy(update=rerun_update)
+        await self.store.save(assessment)
+        assessment = await self._run_gaitkit(assessment, directory)
         await self.store.save(assessment)
         if self.kinecal.ready:
             try:
@@ -396,9 +440,10 @@ class FallRiskAssessmentService:
         )
         assessment = assessment.model_copy(update={
             "status": AssessmentStatus.COMPLETED if complete else AssessmentStatus.PARTIAL,
-            "stage": "跌倒风险与神经运动分析完成" if complete else "部分风险分析结果可用",
+            "stage": "跌倒风险筛查与运动功能分析完成" if complete else "部分评估结果可用",
             "progress": 1.0,
         })
+        assessment = self._apply_result_policy(assessment)
         await self.store.save(assessment)
         return assessment
 
@@ -541,6 +586,7 @@ class FallRiskAssessmentService:
                         "artifacts": assessment.artifacts + self._gvhmr_artifacts(gvhmr_output),
                     }
                 )
+                assessment = await self._run_gaitkit(assessment, directory)
                 if self.kinecal.ready:
                     assessment = assessment.model_copy(
                         update={
@@ -626,7 +672,7 @@ class FallRiskAssessmentService:
                         else AssessmentStatus.PARTIAL
                     ),
                     "stage": (
-                        "跌倒风险与神经运动分析完成"
+                        "跌倒风险筛查与运动功能分析完成"
                         if (
                             assessment.risk_pipeline.status is PipelineStatus.COMPLETED
                             and assessment.kinecal_pipeline.status is PipelineStatus.COMPLETED
@@ -637,6 +683,7 @@ class FallRiskAssessmentService:
                     "completed_at": datetime.now(timezone.utc),
                 }
             )
+            assessment = self._apply_result_policy(assessment)
             await self.store.save(assessment)
         except asyncio.CancelledError:
             raise
@@ -841,6 +888,116 @@ class FallRiskAssessmentService:
         )
         return map_parameters(values), quality
 
+    async def _run_gaitkit(
+        self,
+        assessment: FallRiskAssessment,
+        directory: Path,
+    ) -> FallRiskAssessment:
+        mode = self.settings.gait_parameter_mode
+        if mode == "legacy":
+            return assessment
+        if not self._gaitkit_ready():
+            state = assessment.gait_analysis.model_copy(
+                update={
+                    "requested_mode": mode,
+                    "gaitkit_status": "not_configured",
+                    "fallback_used": mode == "gaitkit_primary",
+                    "message": "GaitKit runner or isolated runtime is unavailable",
+                }
+            )
+            return assessment.model_copy(update={"gait_analysis": state})
+
+        output = directory / "gaitkit" / "gaitkit_result.json"
+        running = assessment.gait_analysis.model_copy(
+            update={
+                "requested_mode": mode,
+                "gaitkit_status": "running",
+                "message": None,
+            }
+        )
+        assessment = assessment.model_copy(
+            update={
+                "stage": "计算世界系步态参数",
+                "progress": max(assessment.progress, 0.84),
+                "gait_analysis": running,
+            }
+        )
+        await self.store.save(assessment)
+        try:
+            if not output.is_file():
+                await self.gaitkit.run(
+                    [
+                        "--skeleton",
+                        str(directory / "gvhmr" / "world_skeleton_3d.npz"),
+                        "--height-cm",
+                        str(assessment.height_cm),
+                        "--output",
+                        str(output),
+                    ]
+                )
+            result = load_gaitkit_result(output)
+        except (PipelineExecutionError, ValueError, KeyError) as exc:
+            failed = assessment.gait_analysis.model_copy(
+                update={
+                    "gaitkit_status": "failed",
+                    "fallback_used": mode == "gaitkit_primary",
+                    "message": str(exc)[:300],
+                }
+            )
+            return assessment.model_copy(update={"gait_analysis": failed})
+
+        state_update = {
+            "gaitkit_status": "completed",
+            "shadow_algorithm_id": result.algorithm_id,
+            "shadow_algorithm_version": result.algorithm_version,
+            "metric_definition_version": result.metric_definition_version,
+            "analysis_fps": result.analysis_fps,
+            "message": None,
+        }
+        update: dict[str, object] = {
+            "gait_analysis": assessment.gait_analysis.model_copy(update=state_update)
+        }
+        if mode == "gaitkit_primary":
+            reasons = [
+                reason
+                for reason in assessment.quality.reasons
+                if not reason.startswith("有效步数少于")
+                and "项参数因事件不足无法计算" not in reason
+            ]
+            if result.complete_step_count < 6:
+                reasons.append("有效步数少于 6，步态汇总稳定性不足")
+            if result.unavailable_parameter_count:
+                reasons.append(
+                    f"{result.unavailable_parameter_count} 项参数因事件不足无法计算"
+                )
+            quality = assessment.quality.model_copy(
+                update={
+                    "passed": (
+                        self._pose_quality_usable(assessment.quality)
+                        and result.complete_step_count >= 6
+                        and result.unavailable_parameter_count == 0
+                    ),
+                    "heel_strike_count": result.heel_strike_count,
+                    "toe_off_count": result.toe_off_count,
+                    "complete_step_count": result.complete_step_count,
+                    "reasons": reasons,
+                }
+            )
+            update.update(
+                gait_parameters=result.parameters,
+                quality=quality,
+                gait_analysis=assessment.gait_analysis.model_copy(
+                    update={
+                        **state_update,
+                        "primary_source": "gaitkit_world",
+                        "primary_algorithm_id": result.algorithm_id,
+                        "primary_algorithm_version": result.algorithm_version,
+                        "fallback_used": False,
+                    }
+                ),
+            )
+        return assessment.model_copy(update=update)
+
     @staticmethod
     def _pose_quality_usable(quality: AssessmentQuality) -> bool:
         return bool(
@@ -927,10 +1084,15 @@ class FallRiskAssessmentService:
             and (model / "saved_model.pb").is_file()
         )
 
+    def _gaitkit_ready(self) -> bool:
+        return self.gaitkit.configured
+
     def _missing_requirements(self) -> list[str]:
         missing = []
         if not self._visionmd_ready():
             missing.append("VisionMD-Gait runtime, runner, and MeTRAbs SavedModel")
+        if self.settings.gait_parameter_mode != "legacy" and not self._gaitkit_ready():
+            missing.append("GaitKit world-skeleton parameter runner")
         if not self.gvhmr.configured:
             missing.append("GVHMR independent Python/CUDA runtime")
         checkpoints = self.settings.gvhmr_checkpoints_root

@@ -96,6 +96,26 @@ class AssessmentQuality(BaseModel):
     reasons: list[str] = Field(default_factory=list)
 
 
+class GaitAnalysisState(BaseModel):
+    """Versioned provenance for legacy/GaitKit rollout and safe fallback."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    requested_mode: Literal["legacy", "gaitkit_shadow", "gaitkit_primary"] = "legacy"
+    primary_source: Literal["visionmd_camera", "gaitkit_world"] = "visionmd_camera"
+    primary_algorithm_id: str = "visionmd-metrabs-camera-gait-parameters"
+    primary_algorithm_version: str = "legacy-v1"
+    gaitkit_status: Literal[
+        "not_configured", "waiting", "running", "completed", "failed", "skipped"
+    ] = "not_configured"
+    shadow_algorithm_id: str | None = None
+    shadow_algorithm_version: str | None = None
+    metric_definition_version: str | None = None
+    analysis_fps: float | None = Field(default=None, gt=0.0)
+    fallback_used: bool = False
+    message: str | None = Field(default=None, max_length=300)
+
+
 class AssessmentArtifact(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -202,6 +222,29 @@ class KinecalFallRiskResult(BaseModel):
         return value
 
 
+class FallRiskScreeningResult(BaseModel):
+    """User-facing binary screening derived from the preserved KINECAL result."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    outcome: Literal["normal", "at_risk", "review_required", "unavailable"]
+    normal_evidence: float = Field(ge=0.0, le=1.0)
+    risk_evidence: float = Field(ge=0.0, le=1.0)
+    confidence: float = Field(ge=0.0, le=1.0)
+    source_model_id: str = Field(min_length=1, max_length=120)
+    raw_risk_level: Literal["low", "medium", "high"]
+    raw_group: Literal["NF", "FHs", "FHm"]
+    decision_version: Literal["kinecal-binary-gate-v1"] = "kinecal-binary-gate-v1"
+    discordant: bool = False
+    reason: str = Field(min_length=1, max_length=300)
+
+    @model_validator(mode="after")
+    def evidence_sums_to_one(self) -> "FallRiskScreeningResult":
+        if abs(self.normal_evidence + self.risk_evidence - 1.0) > 1e-4:
+            raise ValueError("binary screening evidence must sum to one")
+        return self
+
+
 class FallRiskAssessment(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -229,6 +272,7 @@ class FallRiskAssessment(BaseModel):
         default_factory=lambda: PipelineState(status=PipelineStatus.NOT_CONFIGURED)
     )
     quality: AssessmentQuality = Field(default_factory=AssessmentQuality)
+    gait_analysis: GaitAnalysisState = Field(default_factory=GaitAnalysisState)
     gait_parameters: list[GaitParameterValue] = Field(default_factory=list)
     artifacts: list[AssessmentArtifact] = Field(default_factory=list)
     risk_model_status: Literal[
@@ -242,6 +286,10 @@ class FallRiskAssessment(BaseModel):
         "not_installed", "not_configured", "waiting", "running", "completed", "failed", "skipped"
     ] = "not_installed"
     fall_risk_result: KinecalFallRiskResult | None = None
+    screening_result: FallRiskScreeningResult | None = None
+    secondary_assessment_status: Literal[
+        "waiting", "not_triggered", "completed", "review_required", "unavailable"
+    ] = "waiting"
     error: str | None = Field(default=None, max_length=500)
 
     @model_validator(mode="after")
@@ -253,6 +301,59 @@ class FallRiskAssessment(BaseModel):
             and self.risk_model_status == "waiting"
         ):
             self.risk_model_status = "skipped"
+
+        # Keep raw three-class and MotionCLIP outputs untouched while deriving
+        # the stable user-facing screening decision. This also upgrades old
+        # manifests when they are read from the assessment volume.
+        if self.fall_risk_result is None:
+            self.screening_result = None
+            if self.risk_model_status in {"failed", "skipped", "not_configured", "not_installed"}:
+                self.secondary_assessment_status = "unavailable"
+            return self
+
+        result = self.fall_risk_result
+        normal_evidence = result.class_probabilities["low"]
+        risk_evidence = (
+            result.class_probabilities["medium"]
+            + result.class_probabilities["high"]
+        )
+        # The KINECAL classifier is the authoritative first-stage screening
+        # gate. The secondary GAITCLIP representation must not turn a usable
+        # low-risk screening result into a user-facing warning.
+        discordant = False
+        if result.risk_level in {"medium", "high"}:
+            outcome = "at_risk"
+            reason = "一级筛查结果更接近存在跌倒史参考队列"
+        elif result.input_quality == "review":
+            outcome = "review_required"
+            reason = "一级筛查分类置信度不足，需要复测或人工复核"
+        else:
+            outcome = "normal"
+            reason = "一级筛查结果更接近无跌倒史参考队列"
+        self.screening_result = FallRiskScreeningResult(
+            outcome=outcome,
+            normal_evidence=normal_evidence,
+            risk_evidence=risk_evidence,
+            confidence=result.confidence,
+            source_model_id=result.model.model_id,
+            raw_risk_level=result.risk_level,
+            raw_group=result.predicted_group,
+            discordant=discordant,
+            reason=reason,
+        )
+
+        if self.risk_result is None:
+            self.secondary_assessment_status = (
+                "unavailable"
+                if self.risk_model_status in {"failed", "skipped", "not_configured", "not_installed"}
+                else "waiting"
+            )
+        elif outcome == "normal":
+            self.secondary_assessment_status = "not_triggered"
+        elif outcome == "review_required" or not self.quality.passed:
+            self.secondary_assessment_status = "review_required"
+        else:
+            self.secondary_assessment_status = "completed"
         return self
 
     @field_validator(
@@ -278,6 +379,10 @@ class FallRiskWorkerStatus(BaseModel):
     ready: bool
     active_assessment_id: UUID | None = None
     gait_pipeline: PipelineState
+    gait_parameter_mode: Literal["legacy", "gaitkit_shadow", "gaitkit_primary"] = "legacy"
+    gaitkit_pipeline: PipelineState = Field(
+        default_factory=lambda: PipelineState(status=PipelineStatus.NOT_CONFIGURED)
+    )
     gvhmr_pipeline: PipelineState
     risk_pipeline: PipelineState = Field(
         default_factory=lambda: PipelineState(status=PipelineStatus.NOT_CONFIGURED)

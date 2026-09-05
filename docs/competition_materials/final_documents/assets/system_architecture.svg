@@ -1,0 +1,33 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="720" viewBox="0 0 1200 720">
+  <defs>
+    <marker id="arrow" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto"><path d="M0,0 L0,6 L9,3 z" fill="#47627a"/></marker>
+    <style>
+      .title{font:700 30px 'Noto Sans CJK SC','Microsoft YaHei',sans-serif;fill:#1f2937}.layer{font:700 20px 'Noto Sans CJK SC','Microsoft YaHei',sans-serif;fill:#2878d0}.box{fill:#fff;stroke:#9eb3c7;stroke-width:2;rx:14}.head{font:700 19px 'Noto Sans CJK SC','Microsoft YaHei',sans-serif;fill:#1f2937}.txt{font:15px 'Noto Sans CJK SC','Microsoft YaHei',sans-serif;fill:#526476}.line{stroke:#47627a;stroke-width:2.2;fill:none;marker-end:url(#arrow)}
+    </style>
+  </defs>
+  <rect width="1200" height="720" fill="#f4f7fa"/>
+  <text x="600" y="48" text-anchor="middle" class="title">智安护居系统总体架构</text>
+  <text x="34" y="112" class="layer">感知与平台层</text>
+  <rect x="210" y="76" width="220" height="88" class="box"/><text x="320" y="112" text-anchor="middle" class="head">EZVIZ H6c</text><text x="320" y="139" text-anchor="middle" class="txt">H.265 视频 / AAC 音频</text>
+  <rect x="520" y="76" width="280" height="88" class="box"/><text x="660" y="112" text-anchor="middle" class="head">萤石开放平台</text><text x="660" y="139" text-anchor="middle" class="txt">设备、Token、临时媒体会话</text>
+  <path d="M430 120 L520 120" class="line"/>
+  <text x="34" y="242" class="layer">接入与媒体层</text>
+  <rect x="170" y="202" width="260" height="94" class="box"/><text x="300" y="238" text-anchor="middle" class="head">CareShield Backend</text><text x="300" y="265" text-anchor="middle" class="txt">EZVIZ Adapter / StreamService</text>
+  <rect x="520" y="202" width="250" height="94" class="box"/><text x="645" y="238" text-anchor="middle" class="head">Browser EZOPEN</text><text x="645" y="265" text-anchor="middle" class="txt">官方 Web Player</text>
+  <rect x="860" y="202" width="250" height="94" class="box"/><text x="985" y="238" text-anchor="middle" class="head">共享媒体中继</text><text x="985" y="265" text-anchor="middle" class="txt">HTTP-FLV → 内部 RTSP</text>
+  <path d="M660 164 L660 202" class="line"/><path d="M600 164 C500 185 390 180 320 202" class="line"/><path d="M800 120 C930 135 985 155 985 202" class="line"/>
+  <text x="34" y="382" class="layer">算法服务层</text>
+  <rect x="72" y="340" width="230" height="105" class="box"/><text x="187" y="376" text-anchor="middle" class="head">实时跌倒 Worker</text><text x="187" y="403" text-anchor="middle" class="txt">人物 / COCO17 / STGCN</text>
+  <rect x="344" y="340" width="230" height="105" class="box"/><text x="459" y="376" text-anchor="middle" class="head">跌倒风险 Worker</text><text x="459" y="403" text-anchor="middle" class="txt">步态 / GVHMR / 编排</text>
+  <rect x="616" y="340" width="230" height="105" class="box"/><text x="731" y="376" text-anchor="middle" class="head">模型隔离 Worker</text><text x="731" y="402" text-anchor="middle" class="txt">KINECAL / MotionCLIP</text>
+  <rect x="888" y="340" width="230" height="105" class="box"/><text x="1003" y="376" text-anchor="middle" class="head">诈骗识别 Worker</text><text x="1003" y="403" text-anchor="middle" class="txt">SenseVoice / 规则 / Qwen</text>
+  <path d="M985 296 C960 320 820 320 187 340" class="line"/><path d="M985 296 C930 326 680 320 459 340" class="line"/><path d="M985 296 L1003 340" class="line"/><path d="M574 392 L616 392" class="line"/>
+  <text x="34" y="526" class="layer">服务与实时通信层</text>
+  <rect x="168" y="484" width="250" height="98" class="box"/><text x="293" y="520" text-anchor="middle" class="head">统一 AlgorithmResult</text><text x="293" y="548" text-anchor="middle" class="txt">内部鉴权结果接收</text>
+  <rect x="484" y="484" width="210" height="98" class="box"/><text x="589" y="520" text-anchor="middle" class="head">Redis</text><text x="589" y="548" text-anchor="middle" class="txt">心跳 / 最新状态 / 事件</text>
+  <rect x="760" y="484" width="250" height="98" class="box"/><text x="885" y="520" text-anchor="middle" class="head">WebSocket</text><text x="885" y="548" text-anchor="middle" class="txt">单一实时消息通道</text>
+  <path d="M187 445 C190 465 230 472 293 484" class="line"/><path d="M459 445 C440 465 360 472 293 484" class="line"/><path d="M731 445 C650 465 430 470 293 484" class="line"/><path d="M1003 445 C850 468 500 470 293 484" class="line"/><path d="M418 533 L484 533" class="line"/><path d="M694 533 L760 533" class="line"/>
+  <text x="34" y="664" class="layer">应用层</text>
+  <rect x="300" y="620" width="600" height="70" class="box"/><text x="600" y="651" text-anchor="middle" class="head">Vue Web 应用</text><text x="600" y="676" text-anchor="middle" class="txt">综合首页 · 跌倒风险 · 跌倒检测 · 诈骗风险 · 事件 · 设备与系统状态</text>
+  <path d="M645 296 C620 400 610 510 600 620" class="line"/><path d="M885 582 C820 606 730 612 690 620" class="line"/>
+</svg>

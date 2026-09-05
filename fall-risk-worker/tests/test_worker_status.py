@@ -1,4 +1,5 @@
 import asyncio
+import json
 from dataclasses import replace
 from datetime import datetime, timezone
 from pathlib import Path
@@ -21,6 +22,7 @@ from app.services.assessment_service import (
 )
 from app.adapters.command_pipeline import CommandPipeline
 from app.adapters.media_validation import browser_preview_command, contains_decode_error
+from app.services.parameter_catalog import GAITKIT_PARAMETER_NAMES
 
 
 def settings(tmp_path: Path) -> FallRiskWorkerSettings:
@@ -36,6 +38,10 @@ def settings(tmp_path: Path) -> FallRiskWorkerSettings:
         visionmd_runner=Path("/missing/visionmd.py"),
         visionmd_project_root=Path("/missing/visionmd"),
         visionmd_metrabs_model_dir=Path("/missing/metrabs"),
+        gait_parameter_mode="gaitkit_shadow",
+        gaitkit_python="/missing/python",
+        gaitkit_runner=Path("/missing/gaitkit.py"),
+        gaitkit_project_root=Path("/missing/gaitkit"),
         gvhmr_python="/missing/python",
         gvhmr_runner=Path("/missing/gvhmr.py"),
         gvhmr_project_root=Path("/missing/gvhmr"),
@@ -82,6 +88,77 @@ def test_visionmd_readiness_requires_runtime_and_saved_model(tmp_path: Path) -> 
     assert service.status().ready is False
     (model / "saved_model.pb").touch()
     assert service.status().ready is True
+
+
+def test_gaitkit_primary_replaces_parameters_and_preserves_pose_quality(tmp_path: Path) -> None:
+    class ConfiguredGaitKit:
+        configured = True
+
+        async def run(self, arguments: list[str]) -> None:  # pragma: no cover - cached path expected
+            raise AssertionError("cached GaitKit result should be reused")
+
+    async def run() -> None:
+        service = FallRiskAssessmentService(
+            replace(settings(tmp_path), gait_parameter_mode="gaitkit_primary")
+        )
+        service.gaitkit = ConfiguredGaitKit()
+        value = FallRiskAssessment(
+            assessment_id=uuid4(),
+            status="processing_gait",
+            stage="testing",
+            height_cm=170,
+            capture_duration_seconds=15,
+            created_at=datetime.now(timezone.utc),
+            gait_pipeline=PipelineState(status=PipelineStatus.COMPLETED),
+            gvhmr_pipeline=PipelineState(status=PipelineStatus.COMPLETED),
+            quality=AssessmentQuality(
+                pose_valid_ratio=0.95,
+                full_body_visible_ratio=0.96,
+                interpolated_frame_ratio=0.02,
+                maximum_missing_gap_frames=1,
+                maximum_missing_gap_seconds=0.05,
+                source_fps=15.0,
+            ),
+        )
+        directory = service.store.directory(value.assessment_id)
+        result_path = directory / "gaitkit" / "gaitkit_result.json"
+        result_path.parent.mkdir(parents=True)
+        result_path.write_text(
+            json.dumps(
+                {
+                    "schema_version": "2.0",
+                    "algorithm": {
+                        "id": "gaitkit-world-gait-parameters",
+                        "version": "2.0-careshield.1",
+                        "metric_definition_version": "gaitkit-metrics-2.0",
+                    },
+                    "source": {"fps": 30.0},
+                    "metrics": {name: 1.0 for name in GAITKIT_PARAMETER_NAMES},
+                    "metric_manifest": [
+                        {"name": name, "display_name": name, "unit": "m", "group": "test"}
+                        for name in GAITKIT_PARAMETER_NAMES
+                    ],
+                    "quality": {
+                        "heel_strike_count": 8,
+                        "toe_off_count": 8,
+                        "complete_step_count": 7,
+                    },
+                }
+            ),
+            encoding="utf-8",
+        )
+
+        updated = await service._run_gaitkit(value, directory)
+
+        assert updated.gait_analysis.primary_source == "gaitkit_world"
+        assert updated.gait_analysis.gaitkit_status == "completed"
+        assert updated.gait_analysis.analysis_fps == 30.0
+        assert updated.quality.source_fps == 15.0
+        assert updated.quality.complete_step_count == 7
+        assert len(updated.gait_parameters) == 28
+        await service.close()
+
+    asyncio.run(run())
 
 
 def test_only_declared_processed_artifact_is_resolved(tmp_path: Path) -> None:

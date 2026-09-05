@@ -1,0 +1,27 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="760" viewBox="0 0 1200 760">
+  <defs><marker id="a" markerWidth="9" markerHeight="9" refX="8" refY="3" orient="auto"><path d="M0 0L0 6L9 3z" fill="#526476"/></marker><style>.t{font:700 30px 'Noto Sans CJK SC','Microsoft YaHei';fill:#1f2937}.s{font:700 21px 'Noto Sans CJK SC','Microsoft YaHei';fill:#2878d0}.b{fill:#fff;stroke:#9eb3c7;stroke-width:2;rx:12}.h{font:700 15px 'Noto Sans CJK SC','Microsoft YaHei';fill:#1f2937}.p{font:13px 'Noto Sans CJK SC','Microsoft YaHei';fill:#64748b}.l{stroke:#526476;stroke-width:2;fill:none;marker-end:url(#a)}</style></defs>
+  <rect width="1200" height="760" fill="#f4f7fa"/><text x="600" y="46" text-anchor="middle" class="t">三条核心算法链路及统一结果通道</text>
+  <text x="45" y="104" class="s">实时跌倒检测</text>
+  <g transform="translate(45 125)"><rect width="160" height="72" class="b"/><text x="80" y="30" text-anchor="middle" class="h">共享实时视频</text><text x="80" y="53" text-anchor="middle" class="p">15 FPS 采样</text></g>
+  <g transform="translate(245 125)"><rect width="160" height="72" class="b"/><text x="80" y="30" text-anchor="middle" class="h">人物与姿态</text><text x="80" y="53" text-anchor="middle" class="p">YOLO / COCO17</text></g>
+  <g transform="translate(445 125)"><rect width="160" height="72" class="b"/><text x="80" y="30" text-anchor="middle" class="h">关联与序列</text><text x="80" y="53" text-anchor="middle" class="p">2 秒 → 100 帧</text></g>
+  <g transform="translate(645 125)"><rect width="160" height="72" class="b"/><text x="80" y="30" text-anchor="middle" class="h">STGCN-Extend</text><text x="80" y="53" text-anchor="middle" class="p">二分类 / 时序防抖</text></g>
+  <g transform="translate(845 125)"><rect width="290" height="72" class="b"/><text x="145" y="30" text-anchor="middle" class="h">实时状态与告警</text><text x="145" y="53" text-anchor="middle" class="p">normal / suspected / fallen / recovering</text></g>
+  <path d="M205 161L245 161M405 161L445 161M605 161L645 161M805 161L845 161" class="l"/>
+  <text x="45" y="285" class="s">跌倒风险与运动功能评估</text>
+  <g transform="translate(45 306)"><rect width="160" height="82" class="b"/><text x="80" y="32" text-anchor="middle" class="h">视频输入</text><text x="80" y="56" text-anchor="middle" class="p">摄像机 / MP4</text></g>
+  <g transform="translate(245 306)"><rect width="180" height="82" class="b"/><text x="90" y="29" text-anchor="middle" class="h">VisionMD-Gait</text><text x="90" y="53" text-anchor="middle" class="p">MeTRAbs / HS-TO</text><text x="90" y="71" text-anchor="middle" class="p">28 项参数</text></g>
+  <g transform="translate(465 306)"><rect width="180" height="82" class="b"/><text x="90" y="29" text-anchor="middle" class="h">GVHMR</text><text x="90" y="53" text-anchor="middle" class="p">SMPL-X / 世界骨架</text></g>
+  <g transform="translate(685 286)"><rect width="210" height="122" class="b"/><text x="105" y="30" text-anchor="middle" class="h">双模型分析</text><text x="105" y="57" text-anchor="middle" class="p">KINECAL ST-GCN++</text><text x="105" y="80" text-anchor="middle" class="p">MotionCLIP</text><text x="105" y="104" text-anchor="middle" class="p">Qwen 仅组织解释</text></g>
+  <g transform="translate(935 306)"><rect width="200" height="82" class="b"/><text x="100" y="29" text-anchor="middle" class="h">评估结果</text><text x="100" y="53" text-anchor="middle" class="p">风险等级 / 运动功能</text><text x="100" y="71" text-anchor="middle" class="p">参数与处理视频</text></g>
+  <path d="M205 347L245 347M425 347L465 347M645 347L685 347M895 347L935 347" class="l"/>
+  <text x="45" y="495" class="s">诈骗风险识别</text>
+  <g transform="translate(45 516)"><rect width="160" height="82" class="b"/><text x="80" y="32" text-anchor="middle" class="h">H6c 音频</text><text x="80" y="57" text-anchor="middle" class="p">AAC → 16 kHz mono</text></g>
+  <g transform="translate(245 516)"><rect width="180" height="82" class="b"/><text x="90" y="32" text-anchor="middle" class="h">端点与 ASR</text><text x="90" y="57" text-anchor="middle" class="p">SenseVoiceSmall</text></g>
+  <g transform="translate(465 516)"><rect width="200" height="82" class="b"/><text x="100" y="30" text-anchor="middle" class="h">证据融合</text><text x="100" y="55" text-anchor="middle" class="p">规则 / 上下文 / Qwen</text></g>
+  <g transform="translate(705 516)"><rect width="180" height="82" class="b"/><text x="90" y="30" text-anchor="middle" class="h">风险状态</text><text x="90" y="55" text-anchor="middle" class="p">四级滞回判定</text></g>
+  <g transform="translate(925 516)"><rect width="210" height="82" class="b"/><text x="105" y="30" text-anchor="middle" class="h">脱敏结果与告警</text><text x="105" y="55" text-anchor="middle" class="p">不保存原始音频</text></g>
+  <path d="M205 557L245 557M425 557L465 557M665 557L705 557M885 557L925 557" class="l"/>
+  <rect x="300" y="657" width="600" height="66" class="b"/><text x="600" y="683" text-anchor="middle" class="h">统一实时结果通道</text><text x="600" y="706" text-anchor="middle" class="p">AlgorithmResult → Backend → Redis → WebSocket → Vue</text>
+  <path d="M990 197C980 620 850 644 820 657M1035 388C1020 625 880 642 820 657M1030 598C980 630 900 645 820 657" class="l"/>
+</svg>

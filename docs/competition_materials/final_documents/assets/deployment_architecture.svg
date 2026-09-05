@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="680" viewBox="0 0 1200 680">
+  <defs><marker id="a" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto"><path d="M0 0L0 6L9 3z" fill="#526476"/></marker><style>.t{font:700 30px 'Noto Sans CJK SC','Microsoft YaHei';fill:#1f2937}.g{fill:#fff;stroke:#94a9bd;stroke-width:2;rx:14}.h{font:700 18px 'Noto Sans CJK SC','Microsoft YaHei';fill:#1f2937}.p{font:14px 'Noto Sans CJK SC','Microsoft YaHei';fill:#64748b}.l{stroke:#526476;stroke-width:2;fill:none;marker-end:url(#a)}.zone{fill:#eaf3fb;stroke:#8bb7df;stroke-width:2;rx:22}.z{font:700 20px 'Noto Sans CJK SC','Microsoft YaHei';fill:#2878d0}</style></defs>
+  <rect width="1200" height="680" fill="#f4f7fa"/><text x="600" y="48" text-anchor="middle" class="t">Docker Compose 部署与服务边界</text>
+  <rect x="42" y="80" width="1116" height="520" class="zone"/><text x="70" y="115" class="z">Ubuntu 22.04 / Docker Compose / RTX 4090</text>
+  <rect x="86" y="150" width="210" height="88" class="g"/><text x="191" y="184" text-anchor="middle" class="h">frontend : 5173</text><text x="191" y="211" text-anchor="middle" class="p">Vue / Vite / EZUIKit</text>
+  <rect x="370" y="150" width="210" height="88" class="g"/><text x="475" y="184" text-anchor="middle" class="h">backend : 8000</text><text x="475" y="211" text-anchor="middle" class="p">FastAPI / API / WS</text>
+  <rect x="654" y="150" width="210" height="88" class="g"/><text x="759" y="184" text-anchor="middle" class="h">redis</text><text x="759" y="211" text-anchor="middle" class="p">实时状态与事件</text>
+  <rect x="938" y="150" width="170" height="88" class="g"/><text x="1023" y="184" text-anchor="middle" class="h">postgres</text><text x="1023" y="211" text-anchor="middle" class="p">基础设施预留</text>
+  <path d="M296 194L370 194" class="l"/><path d="M580 194L654 194" class="l"/>
+  <rect x="86" y="310" width="210" height="88" class="g"/><text x="191" y="344" text-anchor="middle" class="h">media-relay</text><text x="191" y="371" text-anchor="middle" class="p">HEVC 解码 / H.264 编码</text>
+  <rect x="370" y="310" width="210" height="88" class="g"/><text x="475" y="344" text-anchor="middle" class="h">media-server</text><text x="475" y="371" text-anchor="middle" class="p">RTSP 扇出 / fMP4 环形录制</text>
+  <rect x="654" y="290" width="210" height="118" class="g"/><text x="759" y="324" text-anchor="middle" class="h">ai-worker</text><text x="759" y="351" text-anchor="middle" class="p">人物、Pose、跌倒检测</text><text x="759" y="377" text-anchor="middle" class="p">PyTorch / CUDA</text>
+  <rect x="938" y="290" width="170" height="118" class="g"/><text x="1023" y="324" text-anchor="middle" class="h">fraud-worker</text><text x="1023" y="351" text-anchor="middle" class="p">ASR / 语义证据</text><text x="1023" y="377" text-anchor="middle" class="p">CPU-first</text>
+  <path d="M296 354L370 354" class="l"/><path d="M580 354L654 354" class="l"/><path d="M580 354C750 435 930 435 1023 408" class="l"/>
+  <rect x="86" y="474" width="230" height="88" class="g"/><text x="201" y="508" text-anchor="middle" class="h">fall-risk-worker</text><text x="201" y="535" text-anchor="middle" class="p">VisionMD / GVHMR 编排</text>
+  <rect x="365" y="474" width="210" height="88" class="g"/><text x="470" y="508" text-anchor="middle" class="h">motionclip-worker</text><text x="470" y="535" text-anchor="middle" class="p">运动功能评估</text>
+  <rect x="624" y="474" width="210" height="88" class="g"/><text x="729" y="508" text-anchor="middle" class="h">kinecal-risk-worker</text><text x="729" y="535" text-anchor="middle" class="p">跌倒风险三分类</text>
+  <rect x="883" y="474" width="225" height="88" class="g"/><text x="995" y="508" text-anchor="middle" class="h">ollama</text><text x="995" y="535" text-anchor="middle" class="p">本地 Qwen3 文本复核</text>
+  <path d="M475 398C420 440 300 448 201 474" class="l"/><path d="M316 518L365 518" class="l"/><path d="M575 518L624 518" class="l"/><path d="M883 518C830 465 810 430 820 408" class="l"/>
+  <text x="600" y="640" text-anchor="middle" class="p">模型、运行环境与本地数据通过只读目录或命名卷挂载；Secret 仅由 .env 注入，不进入镜像与源码。</text>
+</svg>

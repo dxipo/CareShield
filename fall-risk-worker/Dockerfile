@@ -29,6 +29,7 @@ COPY shared/python /shared/python
 COPY fall-risk-worker/app ./app
 COPY fall-risk-worker/pipelines/visionmd /opt/visionmd-app
 COPY fall-risk-worker/pipelines/gvhmr /opt/careshield/gvhmr
+COPY fall-risk-worker/pipelines/gaitkit /opt/gaitkit-app
 
 RUN mkdir -p /data/fall-risk /models/fall-risk /opt/gvhmr/inputs/checkpoints
 

@@ -56,7 +56,7 @@ def test_deterministic_explanation_is_natural_and_fact_grounded() -> None:
     assert "跌倒风险评估结果" not in explanation
     assert "步幅呈中度异常" in explanation
     assert "足部抬升" in explanation
-    assert "MotionCLIP 健康参考偏离度为 0.030000" in explanation
+    assert "GAITCLIP 健康参考偏离度为 0.030000" in explanation
     assert "0.020000–0.050000" in explanation
     assert "概念分类置信度 60.0%" in explanation
     assert "八项模型概念：" not in explanation
@@ -95,7 +95,7 @@ def test_ollama_only_renders_language_and_keeps_authoritative_result() -> None:
         assert rendered.healthy_distance == original.healthy_distance
         assert rendered.metadata["explanation_generation"]["llm_used"] is True
         assert "前向推进幅度与步幅控制" in rendered.explanation
-        assert "【关键运动证据】" in rendered.explanation
+        assert "【关键参数分析】" in rendered.explanation
         await client.close()
 
     asyncio.run(run())

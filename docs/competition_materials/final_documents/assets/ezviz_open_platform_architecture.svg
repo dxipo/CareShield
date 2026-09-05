@@ -1,0 +1,100 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1120" height="690" viewBox="0 0 1120 690">
+  <defs>
+    <style>
+      .title{font:700 28px 'Noto Sans CJK SC','Microsoft YaHei',sans-serif;fill:#18324a}
+      .head{font:700 18px 'Noto Sans CJK SC','Microsoft YaHei',sans-serif;fill:#18324a}
+      .text{font:14px 'Noto Sans CJK SC','Microsoft YaHei',sans-serif;fill:#334e68}
+      .small{font:12px 'Noto Sans CJK SC','Microsoft YaHei',sans-serif;fill:#486581}
+      .box{fill:#f5f9fc;stroke:#2f6f9f;stroke-width:2;rx:12}
+      .secure{fill:#fff8e8;stroke:#c78319;stroke-width:2;rx:12}
+      .platform{fill:#eef8f1;stroke:#38845a;stroke-width:2;rx:12}
+      .consumer{fill:#f7f3ff;stroke:#7253a6;stroke-width:2;rx:12}
+      .line{fill:none;stroke:#526d82;stroke-width:2;marker-end:url(#arrow)}
+      .dash{fill:none;stroke:#8a6d3b;stroke-width:2;stroke-dasharray:7 5;marker-end:url(#arrow)}
+    </style>
+    <marker id="arrow" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto" markerUnits="strokeWidth">
+      <path d="M0,0 L0,6 L9,3 z" fill="#526d82"/>
+    </marker>
+  </defs>
+  <rect width="1120" height="690" fill="#ffffff"/>
+  <text x="560" y="42" text-anchor="middle" class="title">EZVIZ 设备与双媒体协议接入</text>
+
+  <rect x="38" y="88" width="210" height="100" class="secure"/>
+  <text x="143" y="121" text-anchor="middle" class="head">Backend 安全配置</text>
+  <text x="143" y="149" text-anchor="middle" class="text">AppKey / AppSecret</text>
+  <text x="143" y="172" text-anchor="middle" class="small">仅 .env；不进入前端与 Worker</text>
+
+  <rect x="320" y="80" width="230" height="116" class="secure"/>
+  <text x="435" y="113" text-anchor="middle" class="head">Token Manager</text>
+  <text x="435" y="141" text-anchor="middle" class="text">POST /api/lapp/token/get</text>
+  <text x="435" y="164" text-anchor="middle" class="small">内存缓存；到期前 5 分钟刷新</text>
+  <text x="435" y="184" text-anchor="middle" class="small">10002 时失效并重试一次</text>
+
+  <rect x="636" y="80" width="220" height="116" class="platform"/>
+  <text x="746" y="116" text-anchor="middle" class="head">萤石开放平台</text>
+  <text x="746" y="145" text-anchor="middle" class="text">设备 / 能力 / 实时地址 API</text>
+  <text x="746" y="170" text-anchor="middle" class="small">真实 H6c 云端接入</text>
+
+  <rect x="916" y="88" width="166" height="100" class="box"/>
+  <text x="999" y="122" text-anchor="middle" class="head">EZVIZ H6c</text>
+  <text x="999" y="150" text-anchor="middle" class="text">H.265 视频</text>
+  <text x="999" y="173" text-anchor="middle" class="text">AAC 音频</text>
+
+  <path d="M248 138 H320" class="line"/>
+  <path d="M550 138 H636" class="line"/>
+  <path d="M856 138 H916" class="line"/>
+
+  <rect x="70" y="265" width="230" height="106" class="box"/>
+  <text x="185" y="299" text-anchor="middle" class="head">设备信息分支</text>
+  <text x="185" y="327" text-anchor="middle" class="text">device/list · device/info</text>
+  <text x="185" y="350" text-anchor="middle" class="small">映射为 CareShield Device Schema</text>
+
+  <rect x="355" y="265" width="230" height="106" class="box"/>
+  <text x="470" y="299" text-anchor="middle" class="head">浏览器播放分支</text>
+  <text x="470" y="327" text-anchor="middle" class="text">EZOPEN 运行期会话</text>
+  <text x="470" y="350" text-anchor="middle" class="small">no-store；仅官方 Web Player</text>
+
+  <rect x="640" y="265" width="200" height="106" class="box"/>
+  <text x="740" y="299" text-anchor="middle" class="head">诊断分支</text>
+  <text x="740" y="327" text-anchor="middle" class="text">临时 HLS</text>
+  <text x="740" y="350" text-anchor="middle" class="small">ffprobe 只返回安全元数据</text>
+
+  <rect x="895" y="265" width="190" height="106" class="box"/>
+  <text x="990" y="299" text-anchor="middle" class="head">算法媒体分支</text>
+  <text x="990" y="327" text-anchor="middle" class="text">临时 HTTP-FLV</text>
+  <text x="990" y="350" text-anchor="middle" class="small">单路上游，不向 Worker 暴露</text>
+
+  <path d="M746 196 C746 230 185 225 185 265" class="line"/>
+  <path d="M746 196 C746 230 470 225 470 265" class="line"/>
+  <path d="M746 196 V265" class="line"/>
+  <path d="M746 196 C746 230 990 225 990 265" class="line"/>
+
+  <rect x="70" y="470" width="230" height="108" class="consumer"/>
+  <text x="185" y="504" text-anchor="middle" class="head">设备页 / Backend 业务</text>
+  <text x="185" y="533" text-anchor="middle" class="text">在线状态、型号、通道</text>
+  <text x="185" y="557" text-anchor="middle" class="small">页面脱敏显示设备标识</text>
+
+  <rect x="355" y="470" width="230" height="108" class="consumer"/>
+  <text x="470" y="504" text-anchor="middle" class="head">Dashboard</text>
+  <text x="470" y="533" text-anchor="middle" class="text">ezuikit-js 9.0.19</text>
+  <text x="470" y="557" text-anchor="middle" class="small">首帧事件 + 人工画面确认</text>
+
+  <rect x="640" y="470" width="200" height="108" class="consumer"/>
+  <text x="740" y="504" text-anchor="middle" class="head">媒体诊断</text>
+  <text x="740" y="533" text-anchor="middle" class="text">HEVC 1080p / AAC</text>
+  <text x="740" y="557" text-anchor="middle" class="small">不返回播放地址</text>
+
+  <rect x="895" y="454" width="190" height="140" class="consumer"/>
+  <text x="990" y="488" text-anchor="middle" class="head">共享媒体中继</text>
+  <text x="990" y="516" text-anchor="middle" class="text">HEVC → H.264 / AAC</text>
+  <text x="990" y="541" text-anchor="middle" class="text">MediaMTX 内部 RTSP</text>
+  <text x="990" y="568" text-anchor="middle" class="small">跌倒 / 风险 / 诈骗 Worker</text>
+
+  <path d="M185 371 V470" class="line"/>
+  <path d="M470 371 V470" class="line"/>
+  <path d="M740 371 V470" class="line"/>
+  <path d="M990 371 V454" class="line"/>
+
+  <rect x="218" y="628" width="684" height="38" rx="8" fill="#fff8e8" stroke="#c78319" stroke-width="1.5"/>
+  <text x="560" y="653" text-anchor="middle" class="text">临时 URL、AccessToken 与完整设备序列号不持久化、不写日志、不进入测试 fixture 或提交材料</text>
+</svg>

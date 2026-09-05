@@ -52,3 +52,80 @@ def map_parameters(values: dict) -> list[GaitParameterValue]:
         )
         for name, (display_name, category, unit) in PARAMETERS.items()
     ]
+
+
+GAITKIT_PARAMETER_NAMES = (
+    "cadence_spm", "step_time_s", "stride_time_s", "stance_time_s",
+    "swing_time_s", "double_support_time_s", "step_length_m", "gait_speed_m_s",
+    "step_width_m", "arm_swing_amplitude_m", "foot_lift_height_m",
+    "step_time_sd_s", "stride_time_sd_s", "step_time_cv_percent",
+    "stride_time_cv_percent", "step_length_cv_percent", "step_width_cv_percent",
+    "step_time_symmetry_index_percent", "trunk_stoop_angle_deg",
+    "hip_angle_asymmetry_deg", "knee_angle_asymmetry_deg",
+    "hip_knee_asymmetry_deg", "estimated_com_ml_sway_rms_m",
+    "extrapolated_com_ml_sway_rms_m", "estimated_margin_of_stability_min_m",
+    "estimated_margin_of_stability_mean_m",
+    "estimated_margin_of_stability_min_hip_width_normalized",
+    "estimated_margin_of_stability_mean_hip_width_normalized",
+)
+
+_POSTURE_PARAMETERS = {
+    "trunk_stoop_angle_deg",
+    "hip_angle_asymmetry_deg",
+    "knee_angle_asymmetry_deg",
+    "hip_knee_asymmetry_deg",
+}
+_STABILITY_PARAMETERS = {
+    name for name in GAITKIT_PARAMETER_NAMES
+    if name.startswith("estimated_") or name.startswith("extrapolated_")
+}
+_TEMPORAL_PARAMETERS = set(GAITKIT_PARAMETER_NAMES[:6])
+_VARIABILITY_PARAMETERS = {
+    name for name in GAITKIT_PARAMETER_NAMES
+    if "_sd_" in name or "_cv_" in name or name == "step_time_symmetry_index_percent"
+}
+
+
+def _gaitkit_category(name: str) -> str:
+    if name in _TEMPORAL_PARAMETERS:
+        return "temporal"
+    if name in _VARIABILITY_PARAMETERS:
+        return "variability"
+    if name in _POSTURE_PARAMETERS:
+        return "posture"
+    if name in _STABILITY_PARAMETERS:
+        return "stability"
+    return "spatial"
+
+
+def map_gaitkit_parameters(values: dict, manifest: list[dict]) -> list[GaitParameterValue]:
+    """Map the versioned GaitKit manifest without inventing legacy fields."""
+    manifest_by_name = {
+        str(item.get("name")): item
+        for item in manifest
+        if isinstance(item, dict) and item.get("name")
+    }
+    if set(values) != set(GAITKIT_PARAMETER_NAMES):
+        raise ValueError("GaitKit result does not contain the canonical 28 parameters")
+    if set(manifest_by_name) != set(GAITKIT_PARAMETER_NAMES):
+        raise ValueError("GaitKit metric manifest does not match the canonical parameters")
+
+    result: list[GaitParameterValue] = []
+    for name in GAITKIT_PARAMETER_NAMES:
+        raw_value = values[name]
+        available = isinstance(raw_value, (int, float)) and not isinstance(raw_value, bool)
+        item = manifest_by_name[name]
+        result.append(
+            GaitParameterValue(
+                name=name,
+                display_name=str(item.get("display_name", name))[:120],
+                category=_gaitkit_category(name),
+                value=float(raw_value) if available else None,
+                unit=str(item.get("unit", ""))[:32],
+                available=available,
+                unavailable_reason=(
+                    None if available else "当前步态事件不足，无法计算该参数"
+                ),
+            )
+        )
+    return result

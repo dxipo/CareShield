@@ -44,6 +44,20 @@ export interface AssessmentQuality {
   reasons: string[]
 }
 
+export interface GaitAnalysisState {
+  requested_mode: 'legacy' | 'gaitkit_shadow' | 'gaitkit_primary'
+  primary_source: 'visionmd_camera' | 'gaitkit_world'
+  primary_algorithm_id: string
+  primary_algorithm_version: string
+  gaitkit_status: 'not_configured' | 'waiting' | 'running' | 'completed' | 'failed' | 'skipped'
+  shadow_algorithm_id: string | null
+  shadow_algorithm_version: string | null
+  metric_definition_version: string | null
+  analysis_fps: number | null
+  fallback_used: boolean
+  message: string | null
+}
+
 export interface FallRiskAssessment {
   assessment_id: string
   status: string
@@ -67,6 +81,7 @@ export interface FallRiskAssessment {
   gvhmr_pipeline: PipelineState
   risk_pipeline: PipelineState
   quality: AssessmentQuality
+  gait_analysis: GaitAnalysisState
   gait_parameters: GaitParameterValue[]
   artifacts: Array<{
     artifact_id: string
@@ -80,6 +95,8 @@ export interface FallRiskAssessment {
   kinecal_pipeline: PipelineState
   kinecal_model_status: 'not_installed' | 'not_configured' | 'waiting' | 'running' | 'completed' | 'failed' | 'skipped'
   fall_risk_result: KinecalFallRiskResult | null
+  screening_result: FallRiskScreeningResult | null
+  secondary_assessment_status: 'waiting' | 'not_triggered' | 'completed' | 'review_required' | 'unavailable'
   error: string | null
 }
 
@@ -89,6 +106,8 @@ export interface FallRiskWorkerStatus {
   ready: boolean
   active_assessment_id: string | null
   gait_pipeline: PipelineState
+  gait_parameter_mode: 'legacy' | 'gaitkit_shadow' | 'gaitkit_primary'
+  gaitkit_pipeline: PipelineState
   gvhmr_pipeline: PipelineState
   risk_pipeline: PipelineState
   kinecal_pipeline: PipelineState
@@ -153,6 +172,19 @@ export interface KinecalFallRiskResult {
   input_quality: 'usable' | 'review'
   limitations: string[]
   metadata: Record<string, unknown>
+}
+
+export interface FallRiskScreeningResult {
+  outcome: 'normal' | 'at_risk' | 'review_required' | 'unavailable'
+  normal_evidence: number
+  risk_evidence: number
+  confidence: number
+  source_model_id: string
+  raw_risk_level: 'low' | 'medium' | 'high'
+  raw_group: 'NF' | 'FHs' | 'FHm'
+  decision_version: 'kinecal-binary-gate-v1'
+  discordant: boolean
+  reason: string
 }
 
 export function fetchFallRiskStatus(signal?: AbortSignal): Promise<FallRiskWorkerStatus> {

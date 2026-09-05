@@ -1,0 +1,55 @@
+{
+  "schema_version": "1.0",
+  "stages": [
+    {
+      "stage": "video_preprocessing",
+      "input": "A single-person RGB video in a common OpenCV-readable format.",
+      "processing": [
+        "Read video metadata.",
+        "Estimate person presence and frame-to-frame activity.",
+        "Fill short inactive gaps and retain continuous candidates of at least three seconds.",
+        "Write each selected interval as a true 30 Hz constant-frame-rate MP4."
+      ],
+      "output": ["input_30hz.mp4"]
+    },
+    {
+      "stage": "human_modeling",
+      "input": "A 30 Hz walking clip with one principal person.",
+      "processing": [
+        "Run GVHMR tracking, two-dimensional pose extraction and image feature extraction.",
+        "Estimate camera motion when the camera is not static.",
+        "Recover globally oriented and translated SMPL-X parameters."
+      ],
+      "output": ["hmr4d_results.pt", "smplx_global_params.npz"]
+    },
+    {
+      "stage": "skeleton_construction",
+      "input": "Per-frame global SMPL-X pose, shape, orientation and translation.",
+      "processing": [
+        "Run the SMPL-X body layer.",
+        "Regress the ordered H36M-17 skeleton and retain left/right toe and heel landmarks.",
+        "Attach a 30 Hz time axis in a metre-scale, Y-up, world-grounded coordinate system."
+      ],
+      "output": ["world_skeleton_21.npz"]
+    },
+    {
+      "stage": "event_recognition",
+      "input": "World skeleton and measured body height in millimetres.",
+      "processing": [
+        "Stack H36M-17 joints in the fixed order.",
+        "Remove each frame's joint centroid and convert axes to the GaitTransformer convention.",
+        "Infer gait phase on 60-frame windows and decode heel-strike and toe-off times."
+      ],
+      "output": ["gait_transformer_input_h36m17.npz", "gait_events.csv"]
+    },
+    {
+      "stage": "parameter_calculation",
+      "input": "World skeleton plus decoded heel-strike and toe-off events.",
+      "processing": [
+        "Compute eight core spatiotemporal parameters.",
+        "Compute twenty variability, symmetry, posture and dynamic-stability parameters."
+      ],
+      "output": ["gait_metrics_28.csv", "gait_metrics_28_all.csv"]
+    }
+  ]
+}

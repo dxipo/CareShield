@@ -18,6 +18,10 @@ class FallRiskWorkerSettings:
     visionmd_runner: Path
     visionmd_project_root: Path
     visionmd_metrabs_model_dir: Path
+    gait_parameter_mode: str
+    gaitkit_python: str
+    gaitkit_runner: Path
+    gaitkit_project_root: Path
     gvhmr_python: str
     gvhmr_runner: Path
     gvhmr_project_root: Path
@@ -34,6 +38,13 @@ class FallRiskWorkerSettings:
 
 
 def load_settings() -> FallRiskWorkerSettings:
+    gait_parameter_mode = os.getenv(
+        "GAIT_PARAMETER_PIPELINE", "gaitkit_shadow"
+    ).strip().lower()
+    if gait_parameter_mode not in {"legacy", "gaitkit_shadow", "gaitkit_primary"}:
+        raise ValueError(
+            "GAIT_PARAMETER_PIPELINE must be legacy, gaitkit_shadow, or gaitkit_primary"
+        )
     return FallRiskWorkerSettings(
         backend_internal_url=os.getenv(
             "BACKEND_INTERNAL_URL", "http://backend:8000"
@@ -58,6 +69,14 @@ def load_settings() -> FallRiskWorkerSettings:
                 "VISIONMD_METRABS_MODEL_DIR",
                 "/models/fall-risk/visionmd/metrabs_local_s",
             )
+        ),
+        gait_parameter_mode=gait_parameter_mode,
+        gaitkit_python=os.getenv("GAITKIT_PYTHON", "/opt/visionmd-env/bin/python"),
+        gaitkit_runner=Path(
+            os.getenv("GAITKIT_RUNNER", "/opt/gaitkit-app/run_world_to_28.py")
+        ),
+        gaitkit_project_root=Path(
+            os.getenv("GAITKIT_PROJECT_ROOT", "/opt/gaitkit-app")
         ),
         gvhmr_python=os.getenv("GVHMR_PYTHON", "/opt/gvhmr-env/bin/python"),
         gvhmr_runner=Path(

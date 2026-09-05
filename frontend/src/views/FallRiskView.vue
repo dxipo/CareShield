@@ -11,6 +11,7 @@ import {
   fetchFallRiskStatus,
   runFallRiskModel,
   type FallRiskAssessment,
+  type FallRiskScreeningResult,
   type FallRiskWorkerStatus,
   type GaitParameterValue,
 } from '../api/fallRisk'
@@ -63,25 +64,41 @@ const conceptLabels: Record<string, string> = {
 const levelLabels: Record<string, string> = {
   normal: '正常', mild: '轻度异常', moderate: '中度异常', marked: '显著异常', abnormal: '异常',
 }
-const riskProbabilityLevels = ['low', 'medium', 'high'] as const
-
+const screeningLabels: Record<FallRiskScreeningResult['outcome'], string> = {
+  normal: '正常',
+  at_risk: '存在风险',
+  review_required: '待复核',
+  unavailable: '无法评估',
+}
+const screeningTones: Record<FallRiskScreeningResult['outcome'], 'success' | 'warning' | 'danger' | 'info'> = {
+  normal: 'success',
+  at_risk: 'danger',
+  review_required: 'warning',
+  unavailable: 'info',
+}
 const conceptEntries = computed(() => Object.entries(active.value?.risk_result?.concepts ?? {}))
 const subjectReady = computed(() => subjectName.value.trim().length > 0)
+const userFacingQualityReasons = computed(() => (
+  active.value?.quality.reasons.filter((reason) => (
+    !reason.startsWith('有效步数少于')
+    && !reason.includes('项参数因事件不足无法计算')
+  )) ?? []
+))
 
 const primaryParameterNames = [
-  'cadence_spm',
-  'step_time_s',
-  'step_length_m',
-  'gait_speed_m_s',
-  'step_width_m',
-  'trunk_lean_deg',
-  'xcom_lateral_rms_m',
-  'emos_min_m',
+  ['cadence_spm'],
+  ['step_time_s'],
+  ['step_length_m'],
+  ['gait_speed_m_s'],
+  ['step_width_m'],
+  ['trunk_stoop_angle_deg', 'trunk_lean_deg'],
+  ['extrapolated_com_ml_sway_rms_m', 'xcom_lateral_rms_m'],
+  ['estimated_margin_of_stability_min_m', 'emos_min_m'],
 ]
 const primaryParameters = computed(() => {
   const byName = new Map((active.value?.gait_parameters ?? []).map((item) => [item.name, item]))
-  return primaryParameterNames.flatMap((name) => {
-    const parameter = byName.get(name)
+  return primaryParameterNames.flatMap((aliases) => {
+    const parameter = aliases.map((name) => byName.get(name)).find(Boolean)
     return parameter ? [parameter] : []
   })
 })
@@ -93,15 +110,24 @@ const paginatedAssessments = computed(() => {
   return assessments.value.slice(start, start + historyPageSize)
 })
 
-const riskLevel = computed(() => active.value?.fall_risk_result?.risk_level ?? null)
-const riskLevelLabel = computed(() => {
-  const level = riskLevel.value
-  return level ? { low: '低风险', medium: '中风险', high: '高风险' }[level] : '待评估'
-})
-const riskLevelTone = computed<'success' | 'warning' | 'danger' | 'info'>(() => {
-  const level = riskLevel.value
-  return level ? { low: 'success' as const, medium: 'warning' as const, high: 'danger' as const }[level] : 'info'
-})
+const screeningOutcome = computed(() => active.value?.screening_result?.outcome ?? null)
+const screeningLabel = computed(() => (
+  screeningOutcome.value ? screeningLabels[screeningOutcome.value] : '等待评估'
+))
+const screeningTone = computed<'success' | 'warning' | 'danger' | 'info'>(() => (
+  screeningOutcome.value ? screeningTones[screeningOutcome.value] : 'info'
+))
+const showSecondaryAnalysis = computed(() => Boolean(
+  active.value?.risk_result
+  && ['completed', 'review_required'].includes(active.value.secondary_assessment_status),
+))
+const secondaryStatusLabel = computed(() => ({
+  waiting: '等待分析',
+  not_triggered: '未触发',
+  completed: '分析完成',
+  review_required: '分析完成',
+  unavailable: '无法分析',
+}[active.value?.secondary_assessment_status ?? 'waiting']))
 
 const isRunning = computed(() =>
   active.value
@@ -218,9 +244,9 @@ function assessmentStatusLabel(value: string): string {
   }[value] ?? value
 }
 
-function assessmentRiskLabel(value: FallRiskAssessment['fall_risk_result']): string {
-  if (!value) return '暂无风险等级'
-  return `${{ low: '低', medium: '中', high: '高' }[value.risk_level]}风险`
+function assessmentRiskLabel(value: FallRiskAssessment): string {
+  const outcome = value.screening_result?.outcome
+  return outcome ? screeningLabels[outcome] : '暂无筛查结果'
 }
 
 function elapsedSeconds(start: string | null, end: string | null): string {
@@ -507,7 +533,7 @@ onBeforeUnmount(() => {
             <span v-if="active.quality.maximum_missing_gap_seconds !== null">
               最大连续缺失 {{ active.quality.maximum_missing_gap_seconds.toFixed(2) }} 秒
             </span>
-            <small v-for="reason in active.quality.reasons" :key="reason">{{ reason }}</small>
+            <small v-for="reason in userFacingQualityReasons" :key="reason">{{ reason }}</small>
           </div>
         </div>
       </article>
@@ -581,45 +607,6 @@ onBeforeUnmount(() => {
       </article>
     </section>
 
-    <section class="panel-card history-panel">
-      <div class="panel-card__header">
-        <div><span class="panel-card__kicker">ASSESSMENT HISTORY</span><h2>评估记录</h2></div>
-        <el-tag effect="plain">共 {{ assessments.length }} 条</el-tag>
-      </div>
-      <div v-if="assessments.length" class="history-list">
-        <button
-          v-for="assessment in paginatedAssessments"
-          :key="assessment.assessment_id"
-          type="button"
-          :class="{ active: active?.assessment_id === assessment.assessment_id }"
-          @click="selectAssessment(assessment)"
-        >
-          <span><strong>{{ formatDateTime(assessment.created_at) }}</strong><small>{{ inputSourceLabel(assessment) }}</small></span>
-          <span><strong>{{ assessment.subject_name ?? '未填写姓名' }}</strong><small>{{ subjectSexLabel(assessment.sex) }} · {{ assessment.age ?? '--' }} 岁 · {{ assessment.height_cm }} cm</small></span>
-          <span><strong>{{ assessment.source_filename ?? '摄像机采集' }}</strong><small>{{ assessment.capture_duration_seconds }} 秒</small></span>
-          <span><strong>{{ assessmentStatusLabel(assessment.status) }}</strong><small>{{ assessmentRiskLabel(assessment.fall_risk_result) }}</small></span>
-        </button>
-        <div class="history-pagination-row">
-          <span>第 {{ historyPage }} / {{ historyPageCount }} 页</span>
-          <el-pagination
-            v-model:current-page="historyPage"
-            class="history-pagination"
-            background
-            layout="prev, pager, next, jumper"
-            :page-size="historyPageSize"
-            :pager-count="5"
-            :total="assessments.length"
-          />
-        </div>
-      </div>
-      <EmptyState
-        v-else
-        title="暂无评估记录"
-        description="完成摄像机采集或上传一次真实步态视频后显示。"
-        :icon="DataAnalysis"
-      />
-    </section>
-
     <section class="panel-card parameter-panel">
       <div class="panel-card__header">
         <div><span class="panel-card__kicker">GAIT PARAMETERS</span><h2>8 项核心步态参数</h2></div>
@@ -654,13 +641,13 @@ onBeforeUnmount(() => {
 
     <section class="panel-card final-risk">
       <div>
-        <span class="panel-card__kicker">DUAL MODEL ASSESSMENT</span>
-        <h2>跌倒风险与神经运动分析</h2>
+        <span class="panel-card__kicker">TWO-STAGE ASSESSMENT</span>
+        <h2>跌倒风险评估</h2>
       </div>
       <el-tag
-        :type="active?.fall_risk_result ? riskLevelTone : active?.kinecal_model_status === 'failed' ? 'danger' : 'info'"
+        :type="screeningOutcome ? screeningTone : active?.kinecal_model_status === 'failed' ? 'danger' : 'info'"
         effect="plain"
-      >{{ active?.fall_risk_result ? riskLevelLabel : '等待评估' }}</el-tag>
+      >{{ screeningLabel }}</el-tag>
 
       <el-button
         v-if="active?.gvhmr_pipeline.status === 'completed' && (!active.fall_risk_result || !active.risk_result)"
@@ -674,55 +661,44 @@ onBeforeUnmount(() => {
 
       <section class="model-result-section kinecal-result-section">
         <div class="model-result-heading">
-          <div><span class="panel-card__kicker">FALL RISK CLASSIFICATION</span><h3>跌倒风险等级</h3></div>
-          <el-tag :type="active?.fall_risk_result ? riskLevelTone : 'info'" effect="light">
-            {{ active?.fall_risk_result ? riskLevelLabel : '等待分类' }}
+          <div><span class="panel-card__kicker">FALL RISK SCREENING</span><h3>跌倒风险筛查结果</h3></div>
+          <el-tag :type="screeningOutcome ? screeningTone : 'info'" effect="light">
+            {{ screeningLabel }}
           </el-tag>
         </div>
-        <template v-if="active?.fall_risk_result">
+        <template v-if="active?.fall_risk_result && active.screening_result">
           <div class="risk-summary">
-            <section class="risk-level-card" :class="`risk-level-card--${riskLevel ?? 'pending'}`">
-              <span>当前风险等级</span><strong>{{ riskLevelLabel }}</strong>
-              <small>KINECAL 跌倒史队列相对分类</small>
+            <section class="risk-level-card" :class="`risk-level-card--${active.screening_result.outcome}`">
+              <span>本次筛查结论</span><strong>{{ screeningLabel }}</strong>
+              <small>{{ active.screening_result.reason }}</small>
             </section>
             <section>
               <span>分类置信度</span><strong>{{ Math.round(active.fall_risk_result.confidence * 100) }}%</strong>
-              <small>{{ active.fall_risk_result.input_quality === 'review' ? '建议复测与专业复核' : '输入可用于本次研究评估' }}</small>
+              <small>{{ active.screening_result.outcome === 'review_required' ? '建议规范复测并进行专业复核' : '模型分类证据强度' }}</small>
             </section>
             <section>
               <span>分析片段</span><strong>{{ active.fall_risk_result.source_duration_seconds.toFixed(1) }} 秒</strong>
               <small>统一重采样 {{ active.fall_risk_result.clip_frames }} 帧</small>
             </section>
           </div>
-          <div class="risk-probability-grid">
-            <section v-for="level in riskProbabilityLevels" :key="level">
-              <div><span>{{ { low: '低风险', medium: '中风险', high: '高风险' }[level] }}</span><strong>{{ Math.round(active.fall_risk_result.class_probabilities[level] * 100) }}%</strong></div>
-              <el-progress
-                :percentage="Math.round(active.fall_risk_result.class_probabilities[level] * 100)"
-                :status="level === 'high' ? 'exception' : level === 'low' ? 'success' : 'warning'"
-                :stroke-width="8"
-                :show-text="false"
-              />
-            </section>
-          </div>
-          <div v-if="active.fall_risk_result.limitations.length" class="risk-limitations">
-            <strong>结果说明</strong>
-            <p v-for="item in active.fall_risk_result.limitations" :key="item">{{ item }}</p>
+          <div v-if="active.screening_result.discordant" class="risk-limitations risk-limitations--warning">
+            <strong>需要复核</strong>
+            <p>一级筛查与运动功能参考偏离结果不一致。系统不会将本次结果直接归为正常，请在相同条件下重新采集并结合专业人员意见复核。</p>
           </div>
         </template>
-        <EmptyState v-else title="暂无跌倒风险等级" description="世界系三维骨架生成后，由独立 KINECAL 风险分类服务计算。" :icon="DataAnalysis" />
+        <EmptyState v-else title="暂无跌倒风险筛查结果" description="完成人体运动处理后生成筛查结论。" :icon="DataAnalysis" />
       </section>
 
       <section class="model-result-section neuromotor-result-section">
         <div class="model-result-heading">
-          <div><span class="panel-card__kicker">NEUROMOTOR FUNCTION</span><h3>神经运动功能分析</h3></div>
-          <el-tag :type="active?.risk_result ? 'success' : 'info'" effect="plain">{{ active?.risk_result ? '分析完成' : '等待分析' }}</el-tag>
+          <div><span class="panel-card__kicker">FALL RISK AND GAIT ANALYSIS</span><h3>跌倒风险值与步态分析</h3></div>
+          <el-tag :type="['completed', 'review_required'].includes(active?.secondary_assessment_status ?? '') ? 'success' : 'info'" effect="plain">{{ secondaryStatusLabel }}</el-tag>
         </div>
-        <template v-if="active?.risk_result">
+        <template v-if="showSecondaryAnalysis && active?.risk_result">
           <div class="risk-summary">
             <section><span>健康参考偏离度</span><strong>{{ active.risk_result.healthy_distance.toFixed(6) }}</strong><small>连续偏离指标，不表示疾病概率</small></section>
             <section><span>有效窗口</span><strong>{{ active.risk_result.metadata.window_count ?? '--' }}</strong><small>每窗 2 秒 / 30 FPS</small></section>
-            <section><span>分析维度</span><strong>{{ conceptEntries.length }}</strong><small>神经运动相关步态概念</small></section>
+            <section><span>分析维度</span><strong>{{ conceptEntries.length }}</strong><small>步态分析维度</small></section>
           </div>
           <div class="concept-grid">
             <section v-for="([name, concept]) in conceptEntries" :key="name">
@@ -733,9 +709,54 @@ onBeforeUnmount(() => {
           </div>
           <div class="model-explanation"><strong>专业分析</strong><p>{{ active.risk_result.explanation }}</p></div>
         </template>
-        <EmptyState v-else title="暂无神经运动分析结果" description="完成符合采集要求的人体运动分析后生成。" :icon="DataAnalysis" />
+        <EmptyState
+          v-else-if="active?.secondary_assessment_status === 'not_triggered'"
+          title="本次未触发专项运动功能报告"
+          description="跌倒风险筛查结果为正常；客观步态参数仍保留在上方供查看。"
+          :icon="DataAnalysis"
+        />
+        <EmptyState v-else title="暂无相关运动功能评估结果" description="完成符合采集要求的人体运动分析后生成。" :icon="DataAnalysis" />
       </section>
       <p class="research-notice">评估结果可作为健康管理与医疗建议的辅助参考，最终结论需结合临床诊断及专业人员意见。</p>
+    </section>
+
+    <section class="panel-card history-panel">
+      <div class="panel-card__header">
+        <div><span class="panel-card__kicker">ASSESSMENT HISTORY</span><h2>评估记录</h2></div>
+        <el-tag effect="plain">共 {{ assessments.length }} 条</el-tag>
+      </div>
+      <div v-if="assessments.length" class="history-list">
+        <button
+          v-for="assessment in paginatedAssessments"
+          :key="assessment.assessment_id"
+          type="button"
+          :class="{ active: active?.assessment_id === assessment.assessment_id }"
+          @click="selectAssessment(assessment)"
+        >
+          <span><strong>{{ formatDateTime(assessment.created_at) }}</strong><small>{{ inputSourceLabel(assessment) }}</small></span>
+          <span><strong>{{ assessment.subject_name ?? '未填写姓名' }}</strong><small>{{ subjectSexLabel(assessment.sex) }} · {{ assessment.age ?? '--' }} 岁 · {{ assessment.height_cm }} cm</small></span>
+          <span><strong>{{ assessment.source_filename ?? '摄像机采集' }}</strong><small>{{ assessment.capture_duration_seconds }} 秒</small></span>
+          <span><strong>{{ assessmentStatusLabel(assessment.status) }}</strong><small>{{ assessmentRiskLabel(assessment) }}</small></span>
+        </button>
+        <div class="history-pagination-row">
+          <span>第 {{ historyPage }} / {{ historyPageCount }} 页</span>
+          <el-pagination
+            v-model:current-page="historyPage"
+            class="history-pagination"
+            background
+            layout="prev, pager, next, jumper"
+            :page-size="historyPageSize"
+            :pager-count="5"
+            :total="assessments.length"
+          />
+        </div>
+      </div>
+      <EmptyState
+        v-else
+        title="暂无评估记录"
+        description="完成摄像机采集或上传一次真实步态视频后显示。"
+        :icon="DataAnalysis"
+      />
     </section>
   </div>
 </template>
@@ -825,17 +846,14 @@ onBeforeUnmount(() => {
 .risk-summary section { display: grid; gap: 6px; padding: 16px; border: 1px solid var(--color-border-light); border-radius: 10px; background: var(--color-surface-soft); }
 .risk-summary span, .risk-summary small { color: var(--color-text-secondary); }
 .risk-summary strong { color: var(--color-heading); font-size: 24px; }
-.risk-level-card--low { border-color: color-mix(in srgb, var(--color-success) 36%, var(--color-border-light)) !important; background: var(--color-success-soft) !important; }
-.risk-level-card--medium { border-color: var(--color-warning-border) !important; background: var(--color-warning-soft) !important; }
-.risk-level-card--high { border-color: var(--color-danger-border) !important; background: var(--color-danger-soft) !important; }
-.risk-level-card--low strong { color: var(--color-success); }
-.risk-level-card--medium strong { color: var(--color-warning-text); }
-.risk-level-card--high strong { color: var(--color-danger-text); }
-.risk-probability-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
-.risk-probability-grid section { display: grid; gap: 10px; padding: 14px; border: 1px solid var(--color-border-light); border-radius: 9px; background: var(--color-control-bg); }
-.risk-probability-grid section > div { display: flex; justify-content: space-between; gap: 12px; }
-.risk-probability-grid span { color: var(--color-text-secondary); }
-.risk-probability-grid strong { color: var(--color-heading); }
+.risk-level-card--normal { border-color: color-mix(in srgb, var(--color-success) 36%, var(--color-border-light)) !important; background: var(--color-success-soft) !important; }
+.risk-level-card--at_risk { border-color: var(--color-danger-border) !important; background: var(--color-danger-soft) !important; }
+.risk-level-card--review_required { border-color: var(--color-warning-border) !important; background: var(--color-warning-soft) !important; }
+.risk-level-card--unavailable { border-color: var(--color-border) !important; background: var(--color-control-bg) !important; }
+.risk-level-card--normal strong { color: var(--color-success); }
+.risk-level-card--at_risk strong { color: var(--color-danger-text); }
+.risk-level-card--review_required strong { color: var(--color-warning-text); }
+.risk-level-card--unavailable strong { color: var(--color-text-secondary); }
 .risk-limitations { padding: 14px 16px; border: 1px solid var(--color-warning-border); border-radius: 9px; color: var(--color-warning-text); background: var(--color-warning-soft); }
 .risk-limitations p { margin: 8px 0 0; font-size: 12px; line-height: 1.65; }
 .concept-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
